@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
 
 from obs_backend.api import create_app
-from obs_backend.models import InfraSnapshot, LogEvent, NodeStat, PodStat, Trace
+from obs_backend.models import (
+    InfraSnapshot, K8sEvent, LogEvent, NodeStat, PodStat, Trace,
+    WorkloadHealth, PodIssue, ReplicaShortfall, PvcIssue,
+)
 
 
 class _FakeSource:
@@ -134,3 +137,133 @@ def test_infra_empty_snapshot():
     assert data["pods"] == []
     assert data["node_count"] == 0
     assert data["pod_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# /v1/{env}/workloads
+# ---------------------------------------------------------------------------
+
+class _FakeWorkloadSource:
+    def __init__(self, wh: WorkloadHealth):
+        self._wh = wh
+
+    def health(self, _env: str) -> WorkloadHealth:
+        return self._wh
+
+
+def _workload_client(wh: WorkloadHealth):
+    return TestClient(create_app(
+        log_source=_FakeSource([]),
+        trace_source=_FakeTraceSource([]),
+        workload_source=_FakeWorkloadSource(wh),
+    ))
+
+
+def test_workloads_returns_workload_health():
+    """/v1/qa/workloads returns WorkloadHealth JSON from injected source."""
+    wh = WorkloadHealth(
+        pod_issues=[PodIssue(namespace="enterprise-ai", pod="api-x", problem="CrashLoopBackOff", detail="api")],
+        replica_shortfalls=[ReplicaShortfall(kind="Deployment", name="api-deploy", namespace="enterprise-ai", desired=3, available=1)],
+        pvc_issues=[PvcIssue(namespace="enterprise-ai", name="data-pvc", phase="Pending")],
+    )
+    resp = _workload_client(wh).get("/v1/qa/workloads")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["pod_issues"]) == 1
+    assert data["pod_issues"][0]["problem"] == "CrashLoopBackOff"
+    assert data["pod_issues"][0]["detail"] == "api"
+    assert len(data["replica_shortfalls"]) == 1
+    assert data["replica_shortfalls"][0]["kind"] == "Deployment"
+    assert data["replica_shortfalls"][0]["desired"] == 3
+    assert len(data["pvc_issues"]) == 1
+    assert data["pvc_issues"][0]["phase"] == "Pending"
+
+
+def test_workloads_unknown_env_404():
+    """Unknown environment returns 404 for /workloads."""
+    wh = WorkloadHealth(pod_issues=[], replica_shortfalls=[], pvc_issues=[])
+    resp = _workload_client(wh).get("/v1/staging/workloads")
+    assert resp.status_code == 404
+
+
+def test_workloads_empty_result():
+    """Empty WorkloadHealth (all green) returns 200 with empty lists."""
+    wh = WorkloadHealth(pod_issues=[], replica_shortfalls=[], pvc_issues=[])
+    resp = _workload_client(wh).get("/v1/prod/workloads")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pod_issues"] == []
+    assert data["replica_shortfalls"] == []
+    assert data["pvc_issues"] == []
+
+
+# ---------------------------------------------------------------------------
+# /v1/{env}/events
+# ---------------------------------------------------------------------------
+
+class _FakeEventsSource:
+    def __init__(self, events: list[K8sEvent], captured: dict | None = None):
+        self._events = events
+        self._captured = captured if captured is not None else {}
+
+    def recent_warnings(self, env: str, limit: int = 50, since_minutes: int = 60) -> list[K8sEvent]:
+        self._captured["env"] = env
+        self._captured["limit"] = limit
+        self._captured["since_minutes"] = since_minutes
+        return self._events[:limit]
+
+
+def _events_client(events: list[K8sEvent] | None = None, captured: dict | None = None):
+    return TestClient(create_app(
+        log_source=_FakeSource([]),
+        trace_source=_FakeTraceSource([]),
+        events_source=_FakeEventsSource(events or [], captured),
+    ))
+
+
+def test_events_returns_list():
+    """/v1/qa/events returns list[K8sEvent] from injected source."""
+    evs = [
+        K8sEvent(ts="2026-06-19T10:00:00Z", type="Warning", reason="BackOff",
+                 kind="Pod", name="api-abc", namespace="enterprise-ai",
+                 message="restarting failed container", count=3),
+    ]
+    resp = _events_client(evs).get("/v1/qa/events")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["reason"] == "BackOff"
+    assert data[0]["count"] == 3
+    assert data[0]["kind"] == "Pod"
+
+
+def test_events_unknown_env_404():
+    """Unknown environment returns 404 for /events."""
+    resp = _events_client().get("/v1/staging/events")
+    assert resp.status_code == 404
+
+
+def test_events_empty_list():
+    """Empty event list is a valid 200 response."""
+    resp = _events_client([]).get("/v1/prod/events")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_events_limit_forwarded():
+    """limit query param is forwarded to the source."""
+    captured: dict = {}
+    _events_client(captured=captured).get("/v1/qa/events?limit=13")
+    assert captured.get("limit") == 13
+
+
+def test_events_limit_bounded_min():
+    """limit=0 is rejected (ge=1)."""
+    resp = _events_client().get("/v1/qa/events?limit=0")
+    assert resp.status_code == 422
+
+
+def test_events_limit_bounded_max():
+    """limit>200 is rejected (le=200)."""
+    resp = _events_client().get("/v1/qa/events?limit=201")
+    assert resp.status_code == 422

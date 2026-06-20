@@ -34,7 +34,14 @@ var chartBuffers = {
   tokens: [],
   cpu:    []
 };
+
+// Last-known data for banner worst-status computation
+var lastHealthData    = null;   // from /health
+var lastWorkloadsData = null;   // from /workloads (null = fetch not yet completed)
 var CHART_CAP = 30;
+
+// Merge state for panelFallas — replaces ad-hoc DOM expando properties
+var fallasState = { workloadsHtml: undefined, eventsHtml: undefined, workloadsHasErrors: false, workloadsErr: false, eventsErr: false };
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -110,6 +117,123 @@ function setText(id, val) {
   var e = el(id); if (e) e.textContent = val;
 }
 
+// ---------------------------------------------------------------------------
+// Worst-status computation — combines /health with /workloads signals
+// ---------------------------------------------------------------------------
+
+var CRIT_PROBLEMS = [
+  'CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull',
+  'CreateContainerConfigError', 'CreateContainerError', 'InvalidImageName'
+];
+
+// Returns { status: 'ok'|'warn'|'crit'|'partial', title, sub }
+// healthData  — result from /health (may be null if fetch failed)
+// wlData      — result from /workloads (may be null if fetch failed or pending)
+// wlFailed    — true if /workloads fetch hard-failed (not stale-env)
+function worstStatus(healthData, wlData, wlFailed) {
+  var level = 'ok';   // ok < warn < crit
+  var reasons = [];
+
+  function bump(l) { if (l === 'crit') level = 'crit'; else if (l === 'warn' && level !== 'crit') level = 'warn'; }
+
+  // --- /health contribution ---
+  if (healthData) {
+    if (healthData.status === 'crit') bump('crit');
+    else if (healthData.status === 'warn') bump('warn');
+    if (healthData.reasons && healthData.reasons.length) {
+      reasons = reasons.concat(healthData.reasons);
+    }
+  }
+
+  // --- /workloads contribution ---
+  // If fetch hard-failed → partial/blind state; if wlData===null AND wlFailed===false → still loading, skip
+  if (wlFailed) {
+    // Can't read workloads → show as partial (amber)
+    bump('warn');
+    reasons.push('workloads: error de lectura');
+    return { status: 'partial', level: level, reasons: reasons };
+  }
+
+  if (wlData) {
+    // pod_issues
+    (wlData.pod_issues || []).forEach(function(p) {
+      if (CRIT_PROBLEMS.indexOf(p.problem) !== -1) {
+        bump('crit');
+        reasons.push(p.problem + ' en ' + p.pod);
+      } else {
+        bump('warn');
+        reasons.push(p.problem + ' en ' + p.pod);
+      }
+    });
+
+    // replica_shortfalls
+    if (wlData.replica_shortfalls && wlData.replica_shortfalls.length) {
+      bump('crit');
+      reasons.push(wlData.replica_shortfalls.length + ' shortfall(s) de réplicas');
+    }
+
+    // pvc_issues
+    (wlData.pvc_issues || []).forEach(function(pvc) {
+      if (pvc.phase === 'Lost') { bump('crit'); reasons.push('PVC Lost: ' + pvc.name); }
+      else if (pvc.phase === 'Pending') { bump('warn'); reasons.push('PVC Pending: ' + pvc.name); }
+    });
+
+    // partial/blind: errors array non-empty
+    if (wlData.errors && wlData.errors.length) {
+      bump('warn');
+      return { status: 'partial', level: level, reasons: reasons, partialErrors: wlData.errors };
+    }
+  }
+
+  return { status: level, level: level, reasons: reasons };
+}
+
+// Apply computed status to all banners and the topbar pill
+function applyBannerStatus(computed) {
+  var statusMap = { ok: 'Operativo', warn: 'Degradado', crit: 'Critico', partial: 'Estado parcial' };
+  var status = computed.status;   // 'ok'|'warn'|'crit'|'partial'
+  // I-2: partial keeps title "Estado parcial" but color follows the computed level
+  // (crit stays red; only non-crit partial is amber)
+  var displayLevel = (status === 'partial')
+    ? (computed.level === 'crit' ? 'crit' : 'warn')
+    : (computed.level || status);
+
+  var title = statusMap[status] || status;
+  var sub = computed.reasons && computed.reasons.length
+    ? computed.reasons.slice(0, 3).join(' · ')
+    : (status === 'ok' ? 'sin novedades' : '—');
+  if (status === 'partial' && computed.partialErrors) {
+    sub = 'no se pudo leer: ' + computed.partialErrors.join(', ');
+  }
+
+  // Topbar pill
+  setText('st-title', title);
+  setText('st-sub', sub);
+  var dot = document.querySelector('.status-pill .dot');
+  if (dot) {
+    dot.style.background = displayLevel === 'ok' ? 'var(--ok)'
+      : displayLevel === 'warn' ? 'var(--warn)' : 'var(--crit)';
+    dot.style.boxShadow = displayLevel === 'ok' ? '0 0 0 3px var(--ok-soft)'
+      : displayLevel === 'warn' ? '0 0 0 3px var(--warn-soft)' : '0 0 0 3px var(--crit-soft)';
+  }
+
+  // App + Infra view banners
+  ['bannerApp', 'bannerInfra'].forEach(function(bid) {
+    var banner = el(bid); if (!banner) return;
+    banner.className = 'banner' + (displayLevel === 'warn' || status === 'partial' ? ' warn' : displayLevel === 'crit' ? ' crit' : '');
+    var suffixes = bid === 'bannerApp' ? ['-app'] : ['-infra'];
+    suffixes.forEach(function(sfx) {
+      setText('st-title' + sfx, title);
+      setText('st-sub' + sfx, sub);
+    });
+    var bDot = banner.querySelector('.d');
+    if (bDot) {
+      bDot.style.background = displayLevel === 'ok' ? 'var(--ok)'
+        : displayLevel === 'warn' ? 'var(--warn)' : 'var(--crit)';
+    }
+  });
+}
+
 function pushBuffer(key, value) {
   if (value === null || value === undefined) return;
   chartBuffers[key].push(value);
@@ -176,51 +300,11 @@ function setPanelLoading(panelId) {
 // ---------------------------------------------------------------------------
 
 function renderHealth(data) {
-  var statusMap = { ok: 'Operativo', warn: 'Degradado', crit: 'Critico' };
-  var title = statusMap[data.status] || data.status;
-  var sub = (data.reasons && data.reasons.length)
-    ? data.reasons.join(' · ')
-    : 'sin novedades';
+  // Store for combined banner computation
+  lastHealthData = data;
 
-  // Update the pill in topbar
-  setText('st-title', title);
-  setText('st-sub', sub);
-
-  // Dot color
-  var dot = document.querySelector('.status-pill .dot');
-  if (dot) {
-    dot.style.background = data.status === 'ok' ? 'var(--ok)'
-      : data.status === 'warn' ? 'var(--warn)' : 'var(--crit)';
-    dot.style.boxShadow = data.status === 'ok'
-      ? '0 0 0 3px var(--ok-soft)'
-      : data.status === 'warn' ? '0 0 0 3px var(--warn-soft)' : '0 0 0 3px var(--crit-soft)';
-  }
-
-  // App view banner
-  var bannerApp = el('bannerApp');
-  if (bannerApp) {
-    bannerApp.className = 'banner' + (data.status === 'warn' ? ' warn' : data.status === 'crit' ? ' crit' : '');
-    setText('st-title-app', title);
-    setText('st-sub-app', sub);
-    var bDot = bannerApp.querySelector('.d');
-    if (bDot) {
-      bDot.style.background = data.status === 'ok' ? 'var(--ok)'
-        : data.status === 'warn' ? 'var(--warn)' : 'var(--crit)';
-    }
-  }
-
-  // Infra view banner (same health source)
-  var bannerInfra = el('bannerInfra');
-  if (bannerInfra) {
-    bannerInfra.className = 'banner' + (data.status === 'warn' ? ' warn' : data.status === 'crit' ? ' crit' : '');
-    setText('st-title-infra', title);
-    setText('st-sub-infra', sub);
-    var bDotInfra = bannerInfra.querySelector('.d');
-    if (bDotInfra) {
-      bDotInfra.style.background = data.status === 'ok' ? 'var(--ok)'
-        : data.status === 'warn' ? 'var(--warn)' : 'var(--crit)';
-    }
-  }
+  // Apply combined banner (workloads may not be in yet — uses last known)
+  applyBannerStatus(worstStatus(lastHealthData, lastWorkloadsData, false));
 
   // KPIs from health
   setText('kpi-errors', nd(data.errors));
@@ -457,6 +541,163 @@ function renderInfra(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Render: Workloads panel (Señales de falla — top section)
+// ---------------------------------------------------------------------------
+
+function renderWorkloads(data) {
+  // Store for combined banner
+  lastWorkloadsData = data;
+  applyBannerStatus(worstStatus(lastHealthData, lastWorkloadsData, false));
+
+  // Réplicas KPI
+  var shortfalls = data.replica_shortfalls || [];
+  var replicasEl = el('kpi-replicas');
+  var replicasTag = el('kpi-replicas-tag');
+  var replicasFoot = el('kpi-replicas-foot');
+  if (replicasEl) {
+    if (shortfalls.length === 0) {
+      replicasEl.textContent = 'OK';
+      replicasEl.className = 'k-val mono';
+      replicasEl.style.color = 'var(--ok)';
+      if (replicasTag) { replicasTag.className = 'tag ok'; replicasTag.textContent = 'ok'; }
+      if (replicasFoot) replicasFoot.textContent = 'todos en spec';
+    } else {
+      replicasEl.textContent = String(shortfalls.length);
+      replicasEl.className = 'k-val mono';
+      replicasEl.style.color = 'var(--crit)';
+      if (replicasTag) { replicasTag.className = 'tag crit'; replicasTag.textContent = 'alerta'; }
+      if (replicasFoot) replicasFoot.textContent = shortfalls.length === 1 ? '1 sub-replicada' : shortfalls.length + ' sub-replicadas';
+    }
+  }
+
+  // Store workloads section HTML for combined render with events
+  var html = '';
+
+  // Partial notice — MUST appear first, never hidden
+  if (data.errors && data.errors.length) {
+    html += '<div class="fallas-partial"><span class="fp-icon">&#x26A0;</span><span>'
+      + 'Estado parcial — no se pudo leer: '
+      + data.errors.map(function(e) { return esc(e); }).join(', ')
+      + '</span></div>';
+  }
+
+  // Pod issues
+  var podIssues = data.pod_issues || [];
+  if (podIssues.length) {
+    html += '<div class="fallas-section"><div class="fallas-heading">Workloads con problema</div>';
+    podIssues.forEach(function(p) {
+      var isCrit = CRIT_PROBLEMS.indexOf(p.problem) !== -1;
+      // M-3: missing namespace/pod renders '?' instead of bare '/'
+      html += '<div class="fallas-row">'
+        + '<span class="frow-id">' + esc(p.namespace || '?') + '/' + esc(p.pod || '?') + '</span>'
+        + '<span class="fbadge ' + (isCrit ? 'crit' : 'warn') + '">' + esc(p.problem) + '</span>'
+        + (p.detail ? '<span class="frow-detail">' + esc(p.detail) + '</span>' : '')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Replica shortfalls
+  if (shortfalls.length) {
+    html += '<div class="fallas-section"><div class="fallas-heading">Réplicas</div>';
+    shortfalls.forEach(function(r) {
+      // I-3: missing available/desired shows 'n/d' instead of 'undefined'
+      html += '<div class="fallas-row">'
+        + '<span class="frow-id">' + esc(r.kind) + ' ' + esc(r.name) + ' <span style="color:var(--text-faint);font-size:10.5px">(' + esc(r.namespace) + ')</span></span>'
+        + '<span class="fbadge crit">' + esc(nd(r.available)) + '/' + esc(nd(r.desired)) + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // PVC issues
+  var pvcIssues = data.pvc_issues || [];
+  if (pvcIssues.length) {
+    html += '<div class="fallas-section"><div class="fallas-heading">PVCs</div>';
+    pvcIssues.forEach(function(pvc) {
+      var sev = pvc.phase === 'Lost' ? 'crit' : 'warn';
+      html += '<div class="fallas-row">'
+        + '<span class="frow-id">' + esc(pvc.namespace) + '/' + esc(pvc.name) + '</span>'
+        + '<span class="fbadge ' + sev + '">' + esc(pvc.phase) + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Save partial HTML keyed under 'workloads' for merging with events (M-4: use fallasState)
+  fallasState.workloadsHtml = html;
+  fallasState.workloadsHasErrors = !!(data.errors && data.errors.length);
+  fallasState.workloadsErr = false;  // I-1: success → no fetch error
+  _renderFallasPanel();
+}
+
+// ---------------------------------------------------------------------------
+// Render: Events panel (Señales de falla — bottom section)
+// ---------------------------------------------------------------------------
+
+function renderEvents(events) {
+  var html = '';
+
+  if (events && events.length) {
+    html += '<div class="fallas-section"><div class="fallas-heading">Eventos Warning</div>';
+    events.slice(0, 50).forEach(function(ev) {
+      var msg = ev.message ? String(ev.message) : '';
+      if (msg.length > 160) msg = msg.slice(0, 157) + '…';
+      html += '<div class="fallas-row" style="align-items:flex-start">'
+        + '<span class="frow-id mono" style="font-size:11px;color:var(--text-faint);min-width:55px">' + esc(fmtTime(ev.ts)) + '</span>'
+        + '<span class="fbadge warn" style="margin-top:1px">' + esc(ev.reason || '?') + '</span>'
+        + '<span style="flex:1;min-width:0;font-size:11.5px;display:flex;flex-direction:column;gap:1px;">'
+        + '<span style="color:var(--text-dim)">' + esc(ev.kind || '') + '/' + esc(ev.name || '') + '</span>'
+        + '<span style="color:var(--text-faint);font-size:11px">' + esc(msg) + '</span>'
+        + '</span>'
+        + (ev.count && ev.count > 1 ? '<span class="fbadge count">&times;' + esc(String(ev.count)) + '</span>' : '')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
+  fallasState.eventsHtml = html;
+  fallasState.eventsErr = false;  // I-1: success → no fetch error
+  _renderFallasPanel();
+}
+
+// Merge workloads + events into the panel body; show empty state only when both are loaded + empty
+function _renderFallasPanel() {
+  var panel = el('panelFallas'); if (!panel) return;
+  var body = el('fallasBody'); if (!body) return;
+
+  var wHtml = fallasState.workloadsHtml;
+  var eHtml = fallasState.eventsHtml;
+
+  // Not both fetches have resolved yet — keep "Cargando…"
+  if (wHtml === undefined || eHtml === undefined) return;
+
+  var combined = (wHtml || '') + (eHtml || '');
+
+  var hasErrors = fallasState.workloadsHasErrors;
+
+  if (!combined && !hasErrors) {
+    body.innerHTML = '<div class="fallas-empty">Sin señales de falla</div>';
+    var hint = el('fallas-hint');
+    if (hint) hint.textContent = 'sin incidencias';
+  } else {
+    body.innerHTML = combined || '';
+    var hint2 = el('fallas-hint');
+    if (hint2) {
+      var count = (body.querySelectorAll('.fallas-row').length);
+      hint2.textContent = count ? count + ' señal' + (count > 1 ? 'es' : '') : (hasErrors ? 'parcial' : '—');
+    }
+  }
+
+  // I-1: error chip reflects either fetch having failed — order-independent
+  if (fallasState.workloadsErr || fallasState.eventsErr) {
+    markPanelError('panelFallas', 'error');
+  } else {
+    markPanelOk('panelFallas');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Chart redraw — called after each refreshAll
 // ---------------------------------------------------------------------------
 
@@ -496,19 +737,25 @@ function refreshAll() {
   activeBatch = myBatch;      // this is the batch allowed to clear refreshing
 
   // Mark panels loading
-  ['panelCharts', 'panelTraces', 'panelLogs', 'panelNodes', 'panelPods'].forEach(setPanelLoading);
+  ['panelCharts', 'panelTraces', 'panelLogs', 'panelNodes', 'panelPods', 'panelFallas'].forEach(setPanelLoading);
+
+  // Reset the panel merge state so stale data from the previous cycle doesn't persist (M-4)
+  fallasState = { workloadsHtml: undefined, eventsHtml: undefined, workloadsHasErrors: false, workloadsErr: false, eventsErr: false };
 
   var p = [
     apiFetch('/health'),
     apiFetch('/logs?limit=100'),
     apiFetch('/traces?limit=20'),
     apiFetch('/infra'),
-    apiFetch('/latency')
+    apiFetch('/latency'),
+    apiFetch('/workloads'),
+    apiFetch('/events?limit=50')
   ];
 
   Promise.allSettled(p).then(function(results) {
     var healthR = results[0], logsR = results[1], tracesR = results[2],
-        infraR = results[3], latencyR = results[4];
+        infraR = results[3], latencyR = results[4],
+        workloadsR = results[5], eventsR = results[6];
 
     // Health + KPIs
     if (healthR.status === 'fulfilled') {
@@ -566,6 +813,40 @@ function refreshAll() {
       console.warn('[obs] /latency failed:', latencyR.reason);
     }
 
+    // Workloads (Señales de falla — workloads section + réplicas KPI + banner escalation)
+    // I-1: do NOT call markPanelOk/markPanelError here — _renderFallasPanel handles the chip
+    if (workloadsR.status === 'fulfilled') {
+      renderWorkloads(workloadsR.value);
+      // renderWorkloads sets fallasState.workloadsErr = false and calls _renderFallasPanel
+    } else if (workloadsR.reason && workloadsR.reason.message === 'stale-env') {
+      // stale-env: skip
+    } else {
+      // Hard failure: /workloads unreadable — mark as partial/blind on banner
+      lastWorkloadsData = null;
+      applyBannerStatus(worstStatus(lastHealthData, null, true));
+      // Set workloadsHtml to empty string (not undefined) so the panel can still render events
+      fallasState.workloadsHtml = '';
+      fallasState.workloadsHasErrors = false;
+      fallasState.workloadsErr = true;  // I-1: record the fetch failure
+      _renderFallasPanel();
+      console.warn('[obs] /workloads failed:', workloadsR.reason);
+    }
+
+    // Events (Señales de falla — events section)
+    // I-1: do NOT call markPanelOk/markPanelError here — _renderFallasPanel handles the chip
+    if (eventsR.status === 'fulfilled') {
+      renderEvents(eventsR.value);
+      // renderEvents sets fallasState.eventsErr = false and calls _renderFallasPanel
+    } else if (eventsR.reason && eventsR.reason.message === 'stale-env') {
+      // stale-env: skip
+    } else {
+      // Set eventsHtml to empty string so the panel can still render workloads
+      fallasState.eventsErr = true;  // I-1: record the fetch failure
+      if (fallasState.eventsHtml === undefined) { fallasState.eventsHtml = ''; }
+      _renderFallasPanel();
+      console.warn('[obs] /events failed:', eventsR.reason);
+    }
+
     // After all data is in, redraw charts
     redrawCharts();
 
@@ -592,8 +873,10 @@ function refreshAll() {
     currentEnv = env;
     envGen++;         // invalidate any in-flight old-env fetches
     refreshing = false; // release guard so the switch's refreshAll runs as a new batch
-    // Reset chart buffers on env change — old env data is irrelevant
+    // Reset chart buffers and last-known data on env change
     chartBuffers = { p95: [], p50: [], tokens: [], cpu: [] };
+    lastHealthData    = null;
+    lastWorkloadsData = null;
     refreshAll();
   };
 })();

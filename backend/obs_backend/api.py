@@ -9,8 +9,8 @@ from fastapi import FastAPI, HTTPException, Query
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.health import summarize
 from obs_backend.latency import build_latency_summary
-from obs_backend.models import HealthSummary, InfraSnapshot, LatencySummary, LogEvent, Trace
-from obs_backend.sources.base import LogSource, MetricsSource, TraceSource
+from obs_backend.models import HealthSummary, InfraSnapshot, K8sEvent, LatencySummary, LogEvent, Trace, WorkloadHealth
+from obs_backend.sources.base import EventsSource, LogSource, MetricsSource, TraceSource, WorkloadSource
 
 _SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -25,14 +25,18 @@ _SECURITY_HEADERS = {
 
 if TYPE_CHECKING:
     from obs_backend.sources.cloud_logging import CloudLoggingSource  # noqa: F401
+    from obs_backend.sources.events import EventsSource as _EventsSourceImpl  # noqa: F401
     from obs_backend.sources.langfuse import LangfuseSource  # noqa: F401
     from obs_backend.sources.monitoring import MonitoringSource  # noqa: F401
+    from obs_backend.sources.workload import WorkloadSource as _WorkloadSourceImpl  # noqa: F401
 
 
 def create_app(
     log_source: LogSource | None = None,
     trace_source: TraceSource | None = None,
     metrics_source: MetricsSource | None = None,
+    workload_source: WorkloadSource | None = None,
+    events_source: EventsSource | None = None,
 ) -> FastAPI:
     app = FastAPI(title="obs·macro backend", version="0.1.0")
 
@@ -65,6 +69,22 @@ def create_app(
         msource: MetricsSource = MonitoringSource()
     else:
         msource = metrics_source
+
+    if workload_source is None:
+        # Import lazy: evita arrastrar google-cloud-monitoring cuando se pasa
+        # una fuente explícita (tests, mocks).
+        from obs_backend.sources.workload import WorkloadSource as _WorkloadSourceImpl
+        wsource: WorkloadSource = _WorkloadSourceImpl()
+    else:
+        wsource = workload_source
+
+    if events_source is None:
+        # Import lazy: evita arrastrar google-cloud-logging cuando se pasa
+        # una fuente explícita (tests, mocks).
+        from obs_backend.sources.events import EventsSource as _EventsSourceImpl
+        esource: EventsSource = _EventsSourceImpl()
+    else:
+        esource = events_source
 
     def _check_env(env: str) -> None:
         if env not in ENVIRONMENTS:
@@ -105,6 +125,20 @@ def create_app(
     def latency(env: str) -> LatencySummary:
         _check_env(env)
         return build_latency_summary(env, source, tsource)
+
+    @app.get("/v1/{env}/workloads", response_model=WorkloadHealth)
+    def workloads(env: str) -> WorkloadHealth:
+        _check_env(env)
+        return wsource.health(env)
+
+    @app.get("/v1/{env}/events", response_model=list[K8sEvent])
+    def events(
+        env: str,
+        limit: int = Query(50, ge=1, le=200),
+        since_minutes: int = Query(60, ge=1, le=1440),
+    ) -> list[K8sEvent]:
+        _check_env(env)
+        return esource.recent_warnings(env, limit=limit, since_minutes=since_minutes)
 
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.

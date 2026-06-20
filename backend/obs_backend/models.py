@@ -55,6 +55,34 @@ class InfraSnapshot(BaseModel):
     pod_count: int
 
 
+class PodIssue(BaseModel):
+    namespace: str
+    pod: str
+    problem: str   # CrashLoopBackOff | ImagePullBackOff | ErrImagePull | Unschedulable | Pending | Failed | Unknown | …
+    detail: str = ""
+
+
+class ReplicaShortfall(BaseModel):
+    kind: str      # Deployment | StatefulSet
+    name: str
+    namespace: str
+    desired: int
+    available: int
+
+
+class PvcIssue(BaseModel):
+    namespace: str
+    name: str
+    phase: str     # Pending | Lost
+
+
+class WorkloadHealth(BaseModel):
+    pod_issues: list[PodIssue]
+    replica_shortfalls: list[ReplicaShortfall]
+    pvc_issues: list[PvcIssue]
+    errors: list[str] = []
+
+
 class LatencyStat(BaseModel):
     label: str
     sample_count: int
@@ -65,3 +93,14 @@ class LatencyStat(BaseModel):
 
 class LatencySummary(BaseModel):
     stats: list[LatencyStat]
+
+
+class K8sEvent(BaseModel):
+    ts: str
+    type: str           # "Warning"
+    reason: str = ""
+    kind: str = ""      # involvedObject.kind
+    name: str = ""      # involvedObject.name
+    namespace: str = ""
+    message: str = ""
+    count: int | None = None

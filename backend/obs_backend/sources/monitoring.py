@@ -13,6 +13,7 @@ from google.cloud import monitoring_v3
 
 from obs_backend.config import ENVIRONMENTS, project_for
 from obs_backend.models import InfraSnapshot, NodeStat, PodStat
+from obs_backend.sources._gmp import latest_value as _latest_value  # re-export para compatibilidad con tests
 
 
 # ---------------------------------------------------------------------------
@@ -30,42 +31,6 @@ _RESTART_POD = "kubernetes.io/container/restart_count"
 # ---------------------------------------------------------------------------
 def _default_client_factory() -> object:
     return monitoring_v3.MetricServiceClient()
-
-
-# ---------------------------------------------------------------------------
-# Value extraction — correct for both real proto-plus TypedValue and duck-typed
-# test fakes. See contract comment in the task spec for why this is non-trivial.
-# ---------------------------------------------------------------------------
-def _latest_value(series) -> float | None:
-    """Return the numeric value of the most recent aligned point, or None.
-
-    Handles:
-    - real proto-plus TypedValue (uses WhichOneof to avoid the 0.0 trap)
-    - duck-typed SimpleNamespace fakes (attr presence check)
-    - series with no points → None
-    """
-    points = getattr(series, "points", None) or []
-    if not points:
-        return None
-    first = points[0]
-    v = getattr(first, "value", None)
-    if v is None:
-        return None
-
-    pb = getattr(type(v), "pb", None)          # real proto-plus TypedValue
-    if pb is not None:
-        field = pb(v).WhichOneof("value")
-        if field is None:
-            return None
-        raw = getattr(v, field)
-        return float(raw) if isinstance(raw, (int, float)) else None
-
-    # Duck-typed fake: probe by attribute presence (NOT truthiness — 0.0 is valid)
-    for attr in ("double_value", "int64_value"):
-        if hasattr(v, attr):
-            raw = getattr(v, attr)
-            return float(raw) if isinstance(raw, (int, float)) else None
-    return None
 
 
 # ---------------------------------------------------------------------------
