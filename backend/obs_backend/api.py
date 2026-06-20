@@ -6,14 +6,21 @@ from fastapi import FastAPI, HTTPException, Query
 
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.health import summarize
-from obs_backend.models import HealthSummary, LogEvent
-from obs_backend.sources.base import LogSource
+from obs_backend.latency import build_latency_summary
+from obs_backend.models import HealthSummary, InfraSnapshot, LatencySummary, LogEvent, Trace
+from obs_backend.sources.base import LogSource, MetricsSource, TraceSource
 
 if TYPE_CHECKING:
     from obs_backend.sources.cloud_logging import CloudLoggingSource  # noqa: F401
+    from obs_backend.sources.langfuse import LangfuseSource  # noqa: F401
+    from obs_backend.sources.monitoring import MonitoringSource  # noqa: F401
 
 
-def create_app(log_source: LogSource | None = None) -> FastAPI:
+def create_app(
+    log_source: LogSource | None = None,
+    trace_source: TraceSource | None = None,
+    metrics_source: MetricsSource | None = None,
+) -> FastAPI:
     app = FastAPI(title="obs·macro backend", version="0.1.0")
 
     if log_source is None:
@@ -23,6 +30,21 @@ def create_app(log_source: LogSource | None = None) -> FastAPI:
         source: LogSource = CloudLoggingSource()
     else:
         source = log_source
+
+    if trace_source is None:
+        # Import lazy: evita arrastrar httpx cuando se pasa una fuente explícita.
+        from obs_backend.sources.langfuse import LangfuseSource
+        tsource: TraceSource = LangfuseSource()
+    else:
+        tsource = trace_source
+
+    if metrics_source is None:
+        # Import lazy: evita arrastrar google-cloud-monitoring cuando se pasa
+        # una fuente explícita (tests, mocks).
+        from obs_backend.sources.monitoring import MonitoringSource
+        msource: MetricsSource = MonitoringSource()
+    else:
+        msource = metrics_source
 
     def _check_env(env: str) -> None:
         if env not in ENVIRONMENTS:
@@ -45,5 +67,23 @@ def create_app(log_source: LogSource | None = None) -> FastAPI:
     def health(env: str) -> HealthSummary:
         _check_env(env)
         return summarize(source.recent(env, min_severity="DEFAULT", limit=300))
+
+    @app.get("/v1/{env}/traces", response_model=list[Trace])
+    def traces(
+        env: str,
+        limit: int = Query(20, ge=1, le=200),
+    ) -> list[Trace]:
+        _check_env(env)
+        return tsource.recent_traces(env, limit=limit)
+
+    @app.get("/v1/{env}/infra", response_model=InfraSnapshot)
+    def infra(env: str) -> InfraSnapshot:
+        _check_env(env)
+        return msource.snapshot(env)
+
+    @app.get("/v1/{env}/latency", response_model=LatencySummary)
+    def latency(env: str) -> LatencySummary:
+        _check_env(env)
+        return build_latency_summary(env, source, tsource)
 
     return app

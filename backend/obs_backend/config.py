@@ -7,6 +7,7 @@ class EnvConfig(TypedDict):
     project_id: str
     namespaces: list[str]
     app_namespace: str
+    langfuse_url: str
 
 
 # Mapeo entorno -> proyecto de la app. PROD se habilita en Fase 3; el mapeo ya
@@ -16,11 +17,13 @@ ENVIRONMENTS: dict[EnvName, EnvConfig] = {
         "project_id": "itmind-macro-ai-qa-0",
         "namespaces": ["enterprise-ai", "langfuse", "airflow"],
         "app_namespace": "enterprise-ai",
+        "langfuse_url": "http://langfuse-qa.macro.com.ar",
     },
     "prod": {
         "project_id": "itmind-macro-ai-prod-0",
         "namespaces": ["enterprise-ai", "langfuse", "airflow"],
         "app_namespace": "enterprise-ai",
+        "langfuse_url": "http://langfuse-prod.macro.com.ar",
     },
 }
 
