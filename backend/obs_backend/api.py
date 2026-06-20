@@ -9,8 +9,8 @@ from fastapi import FastAPI, HTTPException, Query
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.health import summarize
 from obs_backend.latency import build_latency_summary
-from obs_backend.models import HealthSummary, InfraSnapshot, K8sEvent, LatencySummary, LogEvent, Trace, WorkloadHealth
-from obs_backend.sources.base import EventsSource, LogSource, MetricsSource, TraceSource, WorkloadSource
+from obs_backend.models import HealthSummary, InfraSnapshot, K8sEvent, LatencySummary, LogEvent, RagNodeStat, Trace, WorkloadHealth
+from obs_backend.sources.base import EventsSource, LogSource, MetricsSource, RagPipelineSource, TraceSource, WorkloadSource
 
 _SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from obs_backend.sources.events import EventsSource as _EventsSourceImpl  # noqa: F401
     from obs_backend.sources.langfuse import LangfuseSource  # noqa: F401
     from obs_backend.sources.monitoring import MonitoringSource  # noqa: F401
+    from obs_backend.sources.rag_pipeline import RagPipelineSource as _RagPipelineSourceImpl  # noqa: F401
     from obs_backend.sources.workload import WorkloadSource as _WorkloadSourceImpl  # noqa: F401
 
 
@@ -37,6 +38,7 @@ def create_app(
     metrics_source: MetricsSource | None = None,
     workload_source: WorkloadSource | None = None,
     events_source: EventsSource | None = None,
+    rag_source: RagPipelineSource | None = None,
 ) -> FastAPI:
     app = FastAPI(title="obs·macro backend", version="0.1.0")
 
@@ -85,6 +87,13 @@ def create_app(
         esource: EventsSource = _EventsSourceImpl()
     else:
         esource = events_source
+
+    if rag_source is None:
+        # Import lazy: evita arrastrar httpx cuando se pasa una fuente explícita.
+        from obs_backend.sources.rag_pipeline import RagPipelineSource as _RagPipelineSourceImpl
+        rsource: RagPipelineSource = _RagPipelineSourceImpl()
+    else:
+        rsource = rag_source
 
     def _check_env(env: str) -> None:
         if env not in ENVIRONMENTS:
@@ -139,6 +148,14 @@ def create_app(
     ) -> list[K8sEvent]:
         _check_env(env)
         return esource.recent_warnings(env, limit=limit, since_minutes=since_minutes)
+
+    @app.get("/v1/{env}/rag-nodes", response_model=list[RagNodeStat])
+    def rag_nodes(
+        env: str,
+        since_minutes: int = Query(60, ge=1, le=1440),
+    ) -> list[RagNodeStat]:
+        _check_env(env)
+        return rsource.rag_node_stats(env, since_minutes=since_minutes)
 
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.

@@ -104,3 +104,12 @@ class K8sEvent(BaseModel):
     namespace: str = ""
     message: str = ""
     count: int | None = None
+
+
+class RagNodeStat(BaseModel):
+    node: str
+    calls: int
+    p50_ms: float | None = None
+    p95_ms: float | None = None
+    errors: int = 0
+    total_tokens: int | None = None

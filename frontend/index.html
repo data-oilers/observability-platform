@@ -335,6 +335,7 @@
   <nav class="tabstrip">
     <button class="tab is-active" data-view="app" onclick="setView('app')"><span class="ic">◧</span> App <span class="badge">2 ns</span></button>
     <button class="tab" data-view="infra" onclick="setView('infra')"><span class="ic">▤</span> Infra <span class="badge">3 ns</span></button>
+    <a id="ragLink" class="tab" href="/rag-pipeline.html?env=qa" style="text-decoration:none;" title="Diagrama del pipeline RAG con stats en vivo"><span class="ic">⬡</span> Pipeline RAG</a>
     <span class="nsbreadcrumb" id="ns">namespaces: <b>enterprise-ai · langfuse</b></span>
   </nav>
 
@@ -610,6 +611,9 @@
     document.getElementById('pid').textContent = env;
     document.getElementById('clk-env').textContent = (env === 'prod' ? 'PROD' : 'QA') + ' · ART';
     document.getElementById('ctx-env').textContent = env.toUpperCase();
+    // Keep RAG pipeline link in sync with current env
+    var ragLink = document.getElementById('ragLink');
+    if (ragLink) ragLink.href = '/rag-pipeline.html?env=' + env;
   }
 
   function setView(v) {

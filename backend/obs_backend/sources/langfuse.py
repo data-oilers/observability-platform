@@ -1,14 +1,10 @@
-import os
 from typing import Callable
 
 import httpx
 
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.models import Trace
-
-
-def _default_client_factory(base_url: str, auth: tuple[str, str] | None) -> httpx.Client:
-    return httpx.Client(base_url=base_url, auth=auth)
+from obs_backend.sources._langfuse import build_auth, default_client_factory as _default_client_factory
 
 
 class LangfuseSource:
@@ -30,13 +26,7 @@ class LangfuseSource:
 
         # Secretos cargados desde k8s/archivos suelen traer un '\n' final:
         # recortarlo evita un 401 confuso. Vacío -> sin auth (local/dev).
-        raw_key = os.environ.get("LANGFUSE_OBS_KEY", "").strip()
-        auth: tuple[str, str] | None = None
-        if raw_key:
-            if ":" not in raw_key:
-                raise ValueError("LANGFUSE_OBS_KEY debe tener formato 'public:secret'")
-            public, secret = raw_key.split(":", 1)  # el secreto puede contener ':'
-            auth = (public, secret)
+        auth = build_auth()
 
         # Cliente como context manager: cierra el pool de conexiones por llamada.
         with self._client_factory(base_url, auth) as client:

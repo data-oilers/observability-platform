@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from obs_backend.models import InfraSnapshot, K8sEvent, LogEvent, Trace, WorkloadHealth
+from obs_backend.models import InfraSnapshot, K8sEvent, LogEvent, RagNodeStat, Trace, WorkloadHealth
 
 
 class LogSource(Protocol):
@@ -30,4 +30,10 @@ class WorkloadSource(Protocol):
 class EventsSource(Protocol):
     def recent_warnings(self, env: str, limit: int = 50, since_minutes: int = 60) -> list[K8sEvent]:
         """Devuelve los K8s Warning events recientes (más nuevos primero) para el entorno."""
+        ...
+
+
+class RagPipelineSource(Protocol):
+    def rag_node_stats(self, env: str, since_minutes: int = 60) -> list[RagNodeStat]:
+        """Returns per-node stats from Langfuse observations, for RAG topology overlay."""
         ...

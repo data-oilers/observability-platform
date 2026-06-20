@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from obs_backend.api import create_app
 from obs_backend.models import (
-    InfraSnapshot, K8sEvent, LogEvent, NodeStat, PodStat, Trace,
+    InfraSnapshot, K8sEvent, LogEvent, NodeStat, PodStat, RagNodeStat, Trace,
     WorkloadHealth, PodIssue, ReplicaShortfall, PvcIssue,
 )
 
@@ -267,3 +267,59 @@ def test_events_limit_bounded_max():
     """limit>200 is rejected (le=200)."""
     resp = _events_client().get("/v1/qa/events?limit=201")
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# /v1/{env}/rag-nodes
+# ---------------------------------------------------------------------------
+
+class _FakeRagSource:
+    def __init__(self, stats: list[RagNodeStat], captured: dict | None = None):
+        self._stats = stats
+        self._captured = captured if captured is not None else {}
+
+    def rag_node_stats(self, env: str, since_minutes: int = 60) -> list[RagNodeStat]:
+        self._captured["env"] = env
+        self._captured["since_minutes"] = since_minutes
+        return self._stats
+
+
+def _rag_client(stats: list[RagNodeStat] | None = None, captured: dict | None = None):
+    return TestClient(create_app(
+        log_source=_FakeSource([]),
+        trace_source=_FakeTraceSource([]),
+        rag_source=_FakeRagSource(stats or [], captured),
+    ))
+
+
+def test_rag_nodes_returns_list():
+    """/v1/qa/rag-nodes returns list[RagNodeStat] from injected source."""
+    stats = [RagNodeStat(node="retriever", calls=5, p50_ms=120.0, p95_ms=300.0, errors=1, total_tokens=500)]
+    resp = _rag_client(stats).get("/v1/qa/rag-nodes")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["node"] == "retriever"
+    assert data[0]["calls"] == 5
+    assert data[0]["p50_ms"] == 120.0
+    assert data[0]["errors"] == 1
+
+
+def test_rag_nodes_unknown_env_404():
+    """Unknown environment returns 404 for /rag-nodes."""
+    resp = _rag_client().get("/v1/unknown_env/rag-nodes")
+    assert resp.status_code == 404
+
+
+def test_rag_nodes_since_minutes_forwarded():
+    """since_minutes query param is forwarded to the source."""
+    captured: dict = {}
+    _rag_client(captured=captured).get("/v1/qa/rag-nodes?since_minutes=30")
+    assert captured.get("since_minutes") == 30
+
+
+def test_rag_nodes_since_minutes_out_of_range():
+    """since_minutes=0 → 422; since_minutes=1441 → 422."""
+    client = _rag_client()
+    assert client.get("/v1/qa/rag-nodes?since_minutes=0").status_code == 422
+    assert client.get("/v1/qa/rag-nodes?since_minutes=1441").status_code == 422
