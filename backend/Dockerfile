@@ -6,6 +6,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY obs_backend ./obs_backend
+COPY frontend ./frontend
+
+# Serve the frontend via StaticFiles when OBS_FRONTEND_DIR is set.
+ENV OBS_FRONTEND_DIR=/app/frontend
 
 # Kyverno: non-root, sin privilegios. UID alto fijo.
 # El runAsNonRoot real lo enforza el securityContext del manifest en Fase 1.B;

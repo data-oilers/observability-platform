@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from fastapi import FastAPI, HTTPException, Query
@@ -9,6 +11,17 @@ from obs_backend.health import summarize
 from obs_backend.latency import build_latency_summary
 from obs_backend.models import HealthSummary, InfraSnapshot, LatencySummary, LogEvent, Trace
 from obs_backend.sources.base import LogSource, MetricsSource, TraceSource
+
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; img-src 'self' data:; "
+        "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
 
 if TYPE_CHECKING:
     from obs_backend.sources.cloud_logging import CloudLoggingSource  # noqa: F401
@@ -22,6 +35,13 @@ def create_app(
     metrics_source: MetricsSource | None = None,
 ) -> FastAPI:
     app = FastAPI(title="obs·macro backend", version="0.1.0")
+
+    @app.middleware("http")
+    async def _security_headers(request, call_next):
+        response = await call_next(request)
+        for k, v in _SECURITY_HEADERS.items():
+            response.headers.setdefault(k, v)
+        return response
 
     if log_source is None:
         # Import lazy: evita arrastrar google-cloud-logging cuando se pasa una
@@ -85,5 +105,13 @@ def create_app(
     def latency(env: str) -> LatencySummary:
         _check_env(env)
         return build_latency_summary(env, source, tsource)
+
+    # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
+    # Mounted last so API routes always take precedence.
+    frontend_dir = os.environ.get("OBS_FRONTEND_DIR")
+    if frontend_dir and Path(frontend_dir).is_dir():
+        from fastapi.staticfiles import StaticFiles  # noqa: PLC0415
+
+        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
 
     return app

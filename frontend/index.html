@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>obs·macro — panel único</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --ground:#0E1A22; --surface:#15242E; --surface-2:#1B2E3A;
+    --line:#263A47; --line-soft:#1F313C;
+    --text:#DCE6EC; --text-dim:#8DA2AE; --text-faint:#5E7480;
+    --accent:#8B86F0; --accent-soft:rgba(139,134,240,.14);
+    --ok:#43B581; --warn:#E0B33A; --crit:#E5604A;
+    --ok-soft:rgba(67,181,129,.13); --warn-soft:rgba(224,179,58,.13); --crit-soft:rgba(229,96,75,.13);
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --env:#35B6C9; --env-soft:rgba(53,182,201,.13);
+  }
+  [data-env="prod"] { --env:#E5604A; --env-soft:rgba(229,96,75,.14); }
+
+  body { margin:0; background:var(--ground); color:var(--text);
+    font-family:var(--font-sans); font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased; }
+  .mono { font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  .eyebrow { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--text-faint); font-weight:600; }
+
+  /* shell */
+  .wrap { min-height:100vh; display:flex; flex-direction:column; border-top:2px solid var(--env);
+    transition:border-color .35s ease; }
+  .topbar { display:flex; align-items:center; gap:18px; padding:12px 20px;
+    background:linear-gradient(180deg, #122029, var(--ground)); border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:9px; font-weight:600; letter-spacing:-.01em; }
+  .brand .aperture { width:18px; height:18px; border-radius:50%; border:2px solid var(--accent);
+    position:relative; flex:none; }
+  .brand .aperture::after { content:""; position:absolute; inset:3px; border-radius:50%;
+    background:var(--accent); opacity:.5; }
+  .brand small { color:var(--text-faint); font-weight:500; }
+
+  .envswitch { display:flex; background:var(--surface); border:1px solid var(--line);
+    border-radius:9px; padding:3px; gap:2px; }
+  .env-btn { font:inherit; font-size:12px; font-weight:600; letter-spacing:.04em; cursor:pointer;
+    border:0; background:transparent; color:var(--text-dim); padding:6px 16px; border-radius:6px;
+    display:flex; align-items:center; gap:7px; transition:all .2s; }
+  .env-btn .led { width:7px; height:7px; border-radius:50%; background:currentColor; opacity:.55; }
+  .env-btn.is-active { background:var(--env-soft); color:var(--text); box-shadow:inset 0 0 0 1px var(--env); }
+  .env-btn.is-active .led { background:var(--env); opacity:1; }
+
+  .scope { display:flex; flex-direction:column; gap:1px; }
+  .scope .pid { font-size:12.5px; color:var(--text); }
+  .scope .pid b { color:var(--env); transition:color .35s; }
+  .prod-only { display:none; }
+  [data-env="prod"] .prod-only { display:inline-flex; }
+  .caution { align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--crit);
+    background:var(--crit-soft); border:1px solid rgba(229,96,75,.4); padding:3px 9px; border-radius:6px; }
+
+  .spacer { flex:1; }
+  .status-pill { display:flex; align-items:center; gap:9px; background:var(--surface);
+    border:1px solid var(--line); border-radius:9px; padding:7px 13px; }
+  .status-pill .dot { width:9px; height:9px; border-radius:50%; background:var(--ok);
+    box-shadow:0 0 0 3px var(--ok-soft); }
+  .status-pill .dot.live { animation:pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 3px var(--ok-soft);} 50%{box-shadow:0 0 0 6px transparent;} }
+  .status-pill .txt { display:flex; flex-direction:column; line-height:1.25; }
+  .status-pill .txt b { font-size:13px; } .status-pill .txt span { font-size:11px; color:var(--text-dim); }
+  .clock { text-align:right; line-height:1.2; }
+  .clock b { font-size:15px; } .clock span { display:block; font-size:10.5px; color:var(--env);
+    letter-spacing:.14em; font-weight:700; transition:color .35s; }
+
+  /* tab strip */
+  .tabstrip { display:flex; align-items:center; gap:4px; padding:0 20px; background:#101c24;
+    border-bottom:1px solid var(--line); }
+  .tab { font:inherit; font-size:13px; font-weight:600; cursor:pointer; border:0; background:transparent;
+    color:var(--text-dim); padding:13px 18px; border-bottom:2px solid transparent; display:flex;
+    align-items:center; gap:8px; transition:all .18s; }
+  .tab .ic { font-size:15px; opacity:.8; }
+  .tab.is-active { color:var(--text); border-bottom-color:var(--accent); }
+  .tab .badge { font-size:10px; font-weight:700; padding:1px 6px; border-radius:20px;
+    background:var(--surface-2); color:var(--text-dim); }
+  .tab.is-active .badge { background:var(--accent-soft); color:var(--accent); }
+  .nsbreadcrumb { margin-left:auto; font-size:11px; color:var(--text-faint); }
+  .nsbreadcrumb b { color:var(--text-dim); font-weight:500; }
+
+  /* body layout */
+  .layout { flex:1; display:grid; grid-template-columns:minmax(0,1fr) 372px; align-items:start; }
+  .layout.agent-collapsed { grid-template-columns:minmax(0,1fr) 0; }
+  .main { padding:20px; display:flex; flex-direction:column; gap:16px; min-width:0; }
+  .view { display:none; flex-direction:column; gap:16px; }
+  .view.is-active { display:flex; }
+
+  /* status banner */
+  .banner { display:flex; align-items:center; gap:16px; padding:15px 18px; border-radius:12px;
+    background:linear-gradient(100deg, var(--ok-soft), var(--surface)); border:1px solid var(--line);
+    border-left:3px solid var(--ok); }
+  .banner.warn { background:linear-gradient(100deg, var(--warn-soft), var(--surface)); border-left-color:var(--warn); }
+  .banner.crit { background:linear-gradient(100deg, var(--crit-soft), var(--surface)); border-left-color:var(--crit); }
+  .banner .big { font-size:17px; font-weight:600; display:flex; align-items:center; gap:11px; }
+  .banner .big .d { width:11px; height:11px; border-radius:50%; background:var(--ok); }
+  .banner.warn .big .d { background:var(--warn); }
+  .banner.crit .big .d { background:var(--crit); }
+  .banner .sub { color:var(--text-dim); font-size:12.5px; }
+  .banner .link { margin-left:auto; color:var(--accent); font-size:12.5px; font-weight:600; cursor:pointer;
+    border:1px solid var(--accent-soft); background:var(--accent-soft); padding:8px 13px; border-radius:8px;
+    white-space:nowrap; }
+
+  /* kpi grid */
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .kpi { background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:14px 15px;
+    display:flex; flex-direction:column; gap:7px; }
+  .kpi .k-label { font-size:11px; color:var(--text-dim); display:flex; justify-content:space-between; }
+  .kpi .k-val { font-size:26px; font-weight:600; letter-spacing:-.02em; line-height:1; }
+  .kpi .k-val small { font-size:13px; color:var(--text-faint); font-weight:500; margin-left:3px; }
+  .kpi .k-foot { font-size:11px; color:var(--text-faint); }
+  .tag { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; }
+  .tag.ok{background:var(--ok-soft);color:var(--ok);} .tag.warn{background:var(--warn-soft);color:var(--warn);}
+  .tag.crit{background:var(--crit-soft);color:var(--crit);} .tag.mut{background:var(--surface-2);color:var(--text-dim);}
+
+  /* panels */
+  .row2 { display:grid; grid-template-columns:1.5fr 1fr; gap:16px; }
+  .panel { background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .panel > h3 { margin:0; padding:13px 16px; font-size:12.5px; font-weight:600; border-bottom:1px solid var(--line-soft);
+    display:flex; align-items:center; gap:9px; }
+  .panel > h3 .hint { margin-left:auto; font-size:11px; color:var(--text-faint); font-weight:400; }
+  .panel .body { padding:15px 16px; }
+
+  /* chart */
+  .chart svg { width:100%; height:auto; display:block; }
+  .chart .legend { display:flex; gap:16px; margin-top:8px; font-size:11px; color:var(--text-dim); }
+  .chart .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px; vertical-align:-1px; }
+
+  /* langfuse trace */
+  .trace { display:flex; flex-direction:column; gap:9px; }
+  .node { display:flex; align-items:center; gap:11px; }
+  .node .nm { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
+  .node .nn { font-size:12.5px; min-width:118px; }
+  .node .nbar { flex:1; height:6px; border-radius:4px; background:var(--surface-2); overflow:hidden; }
+  .node .nbar i { display:block; height:100%; background:var(--accent); opacity:.8; }
+  .node .nt { font-size:11.5px; color:var(--text-dim); width:62px; text-align:right; }
+  .trace-foot { display:flex; gap:18px; margin-top:13px; padding-top:13px; border-top:1px solid var(--line-soft); }
+  .trace-foot div { display:flex; flex-direction:column; gap:2px; }
+  .trace-foot .l { font-size:10.5px; color:var(--text-faint); }
+  .trace-foot .v { font-size:15px; }
+
+  /* tables */
+  .tablewrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; min-width:560px; }
+  thead th { text-align:left; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--text-faint);
+    font-weight:600; padding:9px 14px; border-bottom:1px solid var(--line-soft); }
+  tbody td { padding:9px 14px; border-bottom:1px solid var(--line-soft); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr:hover { background:var(--surface-2); }
+  .sev { display:inline-flex; align-items:center; gap:7px; font-weight:600; font-size:11px; }
+  .sev .s { width:8px; height:8px; border-radius:50%; }
+  .sev.err{color:var(--crit);} .sev.err .s{background:var(--crit);}
+  .sev.warn{color:var(--warn);} .sev.warn .s{background:var(--warn);}
+  .sev.info{color:var(--text-dim);} .sev.info .s{background:var(--text-faint);}
+  .askbtn { font:inherit; font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-soft);
+    border:0; border-radius:6px; padding:4px 9px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+  .msgcell { color:var(--text-dim); }
+  .msgcell b { color:var(--text); font-weight:500; }
+
+  /* resource bars */
+  .res { display:flex; flex-direction:column; gap:13px; }
+  .res-row { display:grid; grid-template-columns:170px 1fr 1fr; gap:14px; align-items:center; }
+  .res-row .rn { font-size:12px; }
+  .res-row .rn span { display:block; color:var(--text-faint); font-size:10.5px; }
+  .meter { display:flex; flex-direction:column; gap:4px; }
+  .meter .mt { display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-dim); }
+  .meter .mbar { height:7px; border-radius:4px; background:var(--surface-2); overflow:hidden; }
+  .meter .mbar i { display:block; height:100%; border-radius:4px; background:var(--accent); }
+  .meter .mbar i.hot { background:var(--warn); } .meter .mbar i.crit { background:var(--crit); }
+
+  /* health chips (infra) */
+  .health { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:11px; }
+  .hchip { background:var(--surface-2); border:1px solid var(--line-soft); border-radius:9px; padding:11px 12px;
+    display:flex; flex-direction:column; gap:5px; }
+  .hchip .hn { font-size:12px; display:flex; align-items:center; gap:7px; }
+  .hchip .hn .s { width:8px; height:8px; border-radius:50%; background:var(--ok); }
+  .hchip .hv { font-size:11px; color:var(--text-dim); }
+
+  /* carousel */
+  .carousel h3 .caro-title { color:var(--accent); font-weight:600; }
+  .caro-ctrl { margin-left:auto; display:flex; align-items:center; gap:4px; }
+  .caro-ctrl button { font:inherit; width:28px; height:26px; border-radius:7px; border:1px solid var(--line);
+    background:var(--surface-2); color:var(--text-dim); cursor:pointer; font-size:13px; }
+  .caro-ctrl button:hover { border-color:var(--accent); color:var(--text); }
+  .caro-track { padding:15px 16px 4px; }
+  .slide { display:none; }
+  .slide.is-active { display:block; animation:fade .45s ease; }
+  @keyframes fade { from{opacity:0;} to{opacity:1;} }
+  .slide svg { width:100%; height:auto; display:block; }
+  .slide .s-meta { display:flex; align-items:flex-end; justify-content:space-between; margin-top:8px; }
+  .slide .s-meta .big { font-size:24px; font-weight:600; letter-spacing:-.02em; }
+  .slide .s-meta .ctx { font-size:11.5px; color:var(--text-dim); }
+  .caro-dots { display:flex; gap:7px; justify-content:center; padding:10px 0 14px; }
+  .caro-dots i { width:7px; height:7px; border-radius:50%; background:var(--surface-2); cursor:pointer;
+    border:1px solid var(--line); transition:all .25s; }
+  .caro-dots i.on { background:var(--accent); border-color:var(--accent); width:22px; border-radius:4px; }
+
+  /* discord alerts */
+  .alerts { display:flex; flex-direction:column; }
+  .alert-row { display:flex; align-items:center; gap:11px; padding:11px 16px; border-bottom:1px solid var(--line-soft); }
+  .alert-row .s { width:8px; height:8px; border-radius:50%; flex:none; }
+  .alert-row .an { flex:1; min-width:0; font-size:12.5px; }
+  .alert-row .an b { font-weight:500; } .alert-row .an span { display:block; color:var(--text-faint); font-size:11px; }
+  .alert-row .at2 { font-size:11px; color:var(--text-dim); white-space:nowrap; }
+  .dcon { display:inline-flex; align-items:center; gap:6px; font-weight:400; }
+  .dcon::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--ok); }
+  .discord-card { margin:13px 16px 16px; background:#2b2d31; border-radius:8px; border-left:3px solid var(--warn);
+    padding:11px 13px; }
+  .discord-card .dc-head { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .discord-card .dc-bot { width:22px; height:22px; border-radius:50%; background:var(--accent); display:grid;
+    place-items:center; font-size:12px; color:#10121f; }
+  .discord-card .dc-bot-name { font-weight:600; color:#e3e5e8; font-size:12.5px; }
+  .discord-card .dc-tag { font-size:9px; background:#5865f2; color:#fff; padding:1px 5px; border-radius:3px;
+    letter-spacing:.04em; font-weight:600; }
+  .discord-card .dc-title { color:#fff; font-weight:600; font-size:12.5px; margin-bottom:6px; }
+  .discord-card .dc-fields { display:flex; gap:20px; }
+  .discord-card .dc-fields div { font-size:12px; color:#dbdee1; font-family:var(--font-mono); }
+  .discord-card .dc-fields b { color:#949ba4; display:block; font-size:9.5px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.05em; font-family:var(--font-sans); margin-bottom:2px; }
+  .discord-card .dc-time { color:#949ba4; font-size:10.5px; margin-top:8px; font-family:var(--font-mono); }
+
+  /* agent drawer */
+  .agent { position:sticky; top:0; height:calc(100vh - 0px); border-left:1px solid var(--line);
+    background:linear-gradient(180deg,#13212B,#0F1A22); display:flex; flex-direction:column; min-width:0; }
+  .agent-collapsed .agent { display:none; }
+  .agent .ahead { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; }
+  .agent .ahead .ico { width:26px; height:26px; border-radius:7px; background:var(--accent-soft); color:var(--accent);
+    display:grid; place-items:center; font-size:15px; flex:none; }
+  .agent .ahead .at b { font-size:13px; } .agent .ahead .at span { font-size:11px; color:var(--text-dim); display:block; }
+  .agent .ctx { padding:9px 16px; border-bottom:1px solid var(--line-soft); font-size:11px; color:var(--text-dim);
+    display:flex; align-items:center; gap:8px; }
+  .agent .ctx .c-env { color:var(--env); font-weight:700; }
+  .agent .conv { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .selchip { font-size:11px; background:var(--surface); border:1px solid var(--line); border-left:2px solid var(--warn);
+    border-radius:8px; padding:9px 11px; color:var(--text-dim); }
+  .selchip b { color:var(--text); display:block; margin-bottom:3px; font-weight:500; font-size:10.5px;
+    letter-spacing:.04em; text-transform:uppercase; }
+  .answer { font-size:13px; line-height:1.6; }
+  .answer .a-line { margin:0 0 10px; }
+  .answer .lbl { color:var(--accent); font-weight:600; }
+  .answer code { font-family:var(--font-mono); font-size:11.5px; background:var(--surface-2); padding:1px 5px;
+    border-radius:4px; color:#C8D6E0; }
+  .answer .a-link { color:var(--accent); cursor:pointer; text-decoration:none; border-bottom:1px solid var(--accent-soft); }
+  .chips { display:flex; flex-wrap:wrap; gap:7px; }
+  .chips button { font:inherit; font-size:11.5px; color:var(--text); background:var(--surface); border:1px solid var(--line);
+    border-radius:20px; padding:6px 12px; cursor:pointer; }
+  .chips button:hover { border-color:var(--accent); }
+  .agent .ainput { padding:12px 14px; border-top:1px solid var(--line); display:flex; gap:8px; }
+  .agent .ainput input { flex:1; background:var(--surface); border:1px solid var(--line); border-radius:9px;
+    padding:10px 12px; color:var(--text); font:inherit; font-size:12.5px; }
+  .agent .ainput input::placeholder { color:var(--text-faint); }
+  .agent .ainput button { background:var(--accent); color:#10121f; border:0; border-radius:9px; width:40px; cursor:pointer;
+    font-size:16px; font-weight:700; }
+  .collapse { font:inherit; margin-left:auto; background:transparent; border:1px solid var(--line); color:var(--text-dim);
+    border-radius:7px; width:26px; height:26px; cursor:pointer; }
+
+  /* loading / error states */
+  .panel-loading { opacity:.5; pointer-events:none; }
+  .err-chip { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:700;
+    color:var(--crit); background:var(--crit-soft); border:1px solid rgba(229,96,75,.3);
+    padding:2px 7px; border-radius:20px; margin-left:8px; }
+  .nd { color:var(--text-faint); font-size:13px; }
+
+  /* freshness bar */
+  .freshbar { display:flex; align-items:center; gap:10px; padding:6px 20px 0;
+    font-size:11px; color:var(--text-faint); }
+  .freshbar .upd { color:var(--text-dim); }
+  .freshbar .ref-btn { font:inherit; font-size:11px; font-weight:600; color:var(--accent);
+    background:var(--accent-soft); border:1px solid var(--accent-soft); border-radius:6px;
+    padding:3px 9px; cursor:pointer; }
+  .freshbar .ref-btn:hover { border-color:var(--accent); }
+
+  .foot { padding:14px 20px; border-top:1px solid var(--line); color:var(--text-faint); font-size:11px;
+    display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+  @media (max-width:1100px) {
+    .layout, .layout.agent-collapsed { grid-template-columns:1fr; }
+    .agent { position:static; height:auto; border-left:0; border-top:1px solid var(--line); }
+    .row2 { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion:reduce) { .status-pill .dot.live { animation:none; } * { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap" data-env="qa">
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand"><span class="aperture"></span> obs·macro <small>· panel único</small></div>
+
+    <div class="envswitch" role="tablist" aria-label="Entorno">
+      <button class="env-btn is-active" data-env="qa" onclick="setEnv('qa')"><span class="led"></span>QA</button>
+      <button class="env-btn" data-env="prod" onclick="setEnv('prod')"><span class="led"></span>PROD</button>
+    </div>
+
+    <div class="scope">
+      <span class="eyebrow">Proyecto</span>
+      <span class="pid mono">itmind-macro-ai-<b id="pid">qa</b>-0</span>
+    </div>
+    <span class="caution prod-only">▲ Estás viendo PRODUCCIÓN — solo lectura</span>
+
+    <span class="spacer"></span>
+
+    <div class="status-pill">
+      <span class="dot live"></span>
+      <span class="txt"><b id="st-title">Cargando…</b><span id="st-sub">—</span></span>
+    </div>
+    <div class="clock"><b class="mono" id="clock">--:--:--</b><span id="clk-env">QA · ART</span></div>
+  </header>
+
+  <!-- TABS -->
+  <nav class="tabstrip">
+    <button class="tab is-active" data-view="app" onclick="setView('app')"><span class="ic">◧</span> App <span class="badge">2 ns</span></button>
+    <button class="tab" data-view="infra" onclick="setView('infra')"><span class="ic">▤</span> Infra <span class="badge">3 ns</span></button>
+    <span class="nsbreadcrumb" id="ns">namespaces: <b>enterprise-ai · langfuse</b></span>
+  </nav>
+
+  <!-- FRESHNESS BAR -->
+  <div class="freshbar">
+    <span>última actualización: <span class="upd" id="lastUpd">—</span></span>
+    <button class="ref-btn" onclick="refreshAll()">↻ Actualizar</button>
+  </div>
+
+  <!-- BODY -->
+  <div class="layout" id="layout">
+    <div class="main">
+
+      <!-- ===================== APP VIEW ===================== -->
+      <section class="view is-active" data-view="app">
+        <!-- Banner -->
+        <div class="banner" id="bannerApp">
+          <div class="big"><span class="d"></span> <span id="st-title-app">Cargando…</span></div>
+          <div class="sub" id="st-sub-app">—</div>
+          <button class="banner link" onclick="askAgent()">Explicar →</button>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpis">
+          <div class="kpi">
+            <div class="k-label">Requests / min <span class="tag mut">usuarios</span></div>
+            <div class="k-val mono nd" id="kpi-rpm">n/d</div>
+            <div class="k-foot">sin fuente de datos</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Errores <span class="tag ok" id="kpi-errors-tag">5 min</span></div>
+            <div class="k-val mono" id="kpi-errors">—</div>
+            <div class="k-foot">5xx + ERROR</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Gemini 429 <span class="tag ok" id="kpi-429-tag">5 min</span></div>
+            <div class="k-val mono" id="kpi-429">—</div>
+            <div class="k-foot">throttling Vertex</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Latencia p95 <span class="tag ok">chat</span></div>
+            <div class="k-val mono" id="kpi-p95">—</div>
+            <div class="k-foot">normal 2–4 s</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Réplicas API</div>
+            <div class="k-val mono nd" id="kpi-replicas">n/d</div>
+            <div class="k-foot">sin fuente de datos</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Restarts <span class="tag ok">sesión</span></div>
+            <div class="k-val mono" id="kpi-restarts">—</div>
+            <div class="k-foot">delta desde inicio</div>
+          </div>
+        </div>
+
+        <!-- Carousel charts -->
+        <div class="panel carousel" id="panelCharts">
+          <h3>Gráficas · <span class="caro-title" id="caroTitle">Latencia p95</span>
+            <span class="hint">rotación · modo sala/TV</span>
+            <span class="caro-ctrl">
+              <button id="caroPlay" title="Pausar rotación">⏸</button>
+              <button id="caroPrev" title="Anterior">‹</button>
+              <button id="caroNext" title="Siguiente">›</button>
+            </span>
+          </h3>
+          <div class="caro-track" id="caroTrack">
+            <!-- slide 0: p95 latency (ms) -->
+            <div class="slide is-active" data-title="Latencia p95 · chat_agente" data-chart="p95">
+              <svg viewBox="0 0 640 150" preserveAspectRatio="none" data-vals="" data-max="6000">
+                <g stroke="var(--line-soft)" stroke-width="1"><line x1="0" y1="20" x2="640" y2="20"></line><line x1="0" y1="75" x2="640" y2="75"></line><line x1="0" y1="130" x2="640" y2="130"></line></g>
+                <path class="carea" fill="var(--accent)" fill-opacity="0.10" d=""></path>
+                <polyline class="cline" fill="none" stroke="var(--accent)" stroke-width="2" points=""></polyline>
+              </svg>
+              <div class="s-meta"><span class="big mono" id="chart-p95-big">n/d</span><span class="ctx">p95 chat_agente · ms</span></div>
+            </div>
+            <!-- slide 1: p50 latency -->
+            <div class="slide" data-title="Latencia p50 · chat_agente" data-chart="p50">
+              <svg viewBox="0 0 640 150" preserveAspectRatio="none" data-vals="" data-max="4000">
+                <g stroke="var(--line-soft)" stroke-width="1"><line x1="0" y1="20" x2="640" y2="20"></line><line x1="0" y1="75" x2="640" y2="75"></line><line x1="0" y1="130" x2="640" y2="130"></line></g>
+                <path class="carea" fill="var(--accent)" fill-opacity="0.10" d=""></path>
+                <polyline class="cline" fill="none" stroke="var(--accent)" stroke-width="2" points=""></polyline>
+              </svg>
+              <div class="s-meta"><span class="big mono" id="chart-p50-big">n/d</span><span class="ctx">p50 chat_agente · ms</span></div>
+            </div>
+            <!-- slide 2: total tokens (sum over traces) -->
+            <div class="slide" data-title="Tokens · trazas recientes" data-chart="tokens">
+              <svg viewBox="0 0 640 150" preserveAspectRatio="none" data-vals="" data-max="10000">
+                <g stroke="var(--line-soft)" stroke-width="1"><line x1="0" y1="20" x2="640" y2="20"></line><line x1="0" y1="75" x2="640" y2="75"></line><line x1="0" y1="130" x2="640" y2="130"></line></g>
+                <path class="carea" fill="var(--accent)" fill-opacity="0.10" d=""></path>
+                <polyline class="cline" fill="none" stroke="var(--accent)" stroke-width="2" points=""></polyline>
+              </svg>
+              <div class="s-meta"><span class="big mono" id="chart-tokens-big">n/d</span><span class="ctx">Σ tokens · trazas recientes</span></div>
+            </div>
+            <!-- slide 3: cluster avg cpu -->
+            <div class="slide" data-title="CPU promedio del cluster" data-chart="cpu">
+              <svg viewBox="0 0 640 150" preserveAspectRatio="none" data-vals="" data-max="100">
+                <g stroke="var(--line-soft)" stroke-width="1"><line x1="0" y1="20" x2="640" y2="20"></line><line x1="0" y1="75" x2="640" y2="75"></line><line x1="0" y1="130" x2="640" y2="130"></line></g>
+                <path class="carea" fill="var(--accent)" fill-opacity="0.10" d=""></path>
+                <polyline class="cline" fill="none" stroke="var(--accent)" stroke-width="2" points=""></polyline>
+              </svg>
+              <div class="s-meta"><span class="big mono" id="chart-cpu-big">n/d</span><span class="ctx">CPU promedio nodos · %</span></div>
+            </div>
+          </div>
+          <div class="caro-dots" id="caroDots"><i class="on"></i><i></i><i></i><i></i></div>
+        </div>
+
+        <!-- Traces panel (adapted: list of recent traces) -->
+        <div class="row2">
+          <div class="panel" id="panelTraces">
+            <h3>Langfuse · trazas recientes <span class="hint" id="traces-hint">—</span></h3>
+            <div class="body">
+              <div class="trace" id="traceList">
+                <div class="node"><span class="nm"></span><span class="nn mono" style="color:var(--text-faint)">Cargando…</span><span class="nbar"><i style="width:0%"></i></span><span class="nt mono">—</span></div>
+              </div>
+              <div class="trace-foot" id="traceFoot">
+                <div><span class="l">Faithfulness avg</span><span class="v mono" id="tf-faith">—</span></div>
+                <div><span class="l">Tokens Σ</span><span class="v mono" id="tf-tokens">—</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Discord panel — deferred, left intact -->
+          <div class="panel">
+            <h3>Alertas → Discord <span class="hint"><span class="dcon mono">#macro-qa-alerts</span></span></h3>
+            <div class="alerts">
+              <div class="alert-row"><span class="s" style="background:var(--warn)"></span><div class="an"><b>app_error_log_spike · enterprise-ai</b><span>RAGAS OpenAIError ×6 en 10 min</span></div><span class="at2">→ enviada 10:31</span></div>
+              <div class="alert-row"><span class="s" style="background:var(--ok)"></span><div class="an"><b>gke_pod_not_ready</b><span>sin disparos · 14 d</span></div><span class="at2">armada</span></div>
+              <div class="alert-row"><span class="s" style="background:var(--ok)"></span><div class="an"><b>vertex_ai_429_rate</b><span>0 en la ventana</span></div><span class="at2">armada</span></div>
+            </div>
+            <div class="discord-card">
+              <div class="dc-head"><span class="dc-bot">⌁</span><span class="dc-bot-name">obs·macro</span><span class="dc-tag">BOT</span></div>
+              <div class="dc-title">Panel Discord — próximamente</div>
+              <div class="dc-fields"><div><b>Estado</b>deferred</div></div>
+              <div class="dc-time">integración Discord pendiente</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logs table -->
+        <div class="panel" id="panelLogs">
+          <h3>Eventos en vivo · API <span class="hint">stream · enterprise-ai-api-*</span></h3>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Hora</th><th>Sev</th><th>Pod</th><th>Mensaje / ruta</th><th>Estado</th><th>ms</th><th></th></tr></thead>
+              <tbody id="logsTbody">
+                <tr><td colspan="7" style="color:var(--text-faint);text-align:center;padding:20px">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== INFRA VIEW ===================== -->
+      <section class="view" data-view="infra">
+        <!-- Infra banner — reuses health data -->
+        <div class="banner" id="bannerInfra">
+          <div class="big"><span class="d"></span> <span id="st-title-infra">Cargando…</span></div>
+          <div class="sub" id="st-sub-infra">—</div>
+          <button class="banner link" onclick="askAgent('infra')">¿Es grave? →</button>
+        </div>
+
+        <!-- Infra KPIs -->
+        <div class="kpis">
+          <div class="kpi">
+            <div class="k-label">Nodos <span class="tag ok">ready</span></div>
+            <div class="k-val mono" id="kpi-nodes">—</div>
+            <div class="k-foot">macro-ai-gke</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Pods totales</div>
+            <div class="k-val mono" id="kpi-pods">—</div>
+            <div class="k-foot">todos los namespaces</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Restarts <span class="tag warn">sesión</span></div>
+            <div class="k-val mono" id="kpi-infra-restarts">—</div>
+            <div class="k-foot">Σ pods</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Cloud SQL CPU</div>
+            <div class="k-val mono nd">n/d</div>
+            <div class="k-foot">sin fuente de datos</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">LB backends <span class="tag mut">n/d</span></div>
+            <div class="k-val mono nd">n/d</div>
+            <div class="k-foot">sin fuente de datos</div>
+          </div>
+          <div class="kpi">
+            <div class="k-label">Errores <span class="tag ok">5 min</span></div>
+            <div class="k-val mono" id="kpi-infra-errors">—</div>
+            <div class="k-foot">5xx + ERROR</div>
+          </div>
+        </div>
+
+        <!-- Nodes table -->
+        <div class="panel" id="panelNodes">
+          <h3>Nodos <span class="hint" id="nodes-hint">—</span></h3>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Nodo</th><th>CPU</th><th>RAM</th><th>Estado</th></tr></thead>
+              <tbody id="nodesTbody">
+                <tr><td colspan="4" style="color:var(--text-faint);text-align:center;padding:20px">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Pods table -->
+        <div class="panel" id="panelPods">
+          <h3>Pods por namespace <span class="hint" id="pods-hint">—</span></h3>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Pod</th><th>Namespace</th><th>CPU (cores)</th><th>RAM</th><th>Restarts</th></tr></thead>
+              <tbody id="podsTbody">
+                <tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:20px">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- LB panel (deferred) + Cloud SQL (no source) -->
+        <div class="row2">
+          <div class="panel">
+            <h3>LB interno banco · uptime <span class="hint">deferred</span></h3>
+            <div class="body"><div class="health">
+              <div class="hchip"><span class="hn"><span class="s" style="background:var(--text-faint)"></span>ECM</span><span class="hv mono nd">n/d</span></div>
+              <div class="hchip"><span class="hn"><span class="s" style="background:var(--text-faint)"></span>OTDS</span><span class="hv mono nd">n/d</span></div>
+              <div class="hchip"><span class="hn"><span class="s" style="background:var(--text-faint)"></span>Langfuse</span><span class="hv mono nd">n/d</span></div>
+              <div class="hchip"><span class="hn"><span class="s" style="background:var(--text-faint)"></span>IA front</span><span class="hv mono nd">n/d</span></div>
+              <div class="hchip"><span class="hn"><span class="s" style="background:var(--text-faint)"></span>IA back</span><span class="hv mono nd">n/d</span></div>
+              <div class="hchip"><span class="hn"><span class="s" style="background:var(--text-faint)"></span>Brava</span><span class="hv mono nd">n/d</span></div>
+            </div></div>
+          </div>
+          <div class="panel">
+            <h3>Cloud SQL · langfuse-pg</h3>
+            <div class="body res">
+              <div class="meter"><div class="mt"><span>CPU</span><span class="mono nd">n/d</span></div><div class="mbar"><i style="width:0%"></i></div></div>
+              <div class="meter" style="margin-top:12px"><div class="mt"><span>Conexiones</span><span class="mono nd">n/d</span></div><div class="mbar"><i style="width:0%"></i></div></div>
+              <div class="meter" style="margin-top:12px"><div class="mt"><span>Disco</span><span class="mono nd">n/d</span></div><div class="mbar"><i style="width:0%"></i></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ===================== AGENT DRAWER ===================== -->
+    <aside class="agent" id="agent">
+      <div class="ahead">
+        <span class="ico">⌁</span>
+        <span class="at"><b>Agente · logs</b><span>interpreta y correlaciona</span></span>
+        <button class="collapse" onclick="toggleAgent()" title="Ocultar">×</button>
+      </div>
+      <div class="ctx">contexto: <span class="c-env" id="ctx-env">QA</span> · enterprise-ai · api</div>
+      <div class="conv">
+        <div class="selchip"><b>Agente</b><span class="mono">Funcionalidad pendiente de implementación.</span></div>
+      </div>
+      <div class="ainput">
+        <input placeholder="Preguntá sobre un log o error…" aria-label="consulta">
+        <button title="Enviar">↑</button>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="foot">
+    <span>obs·macro · Fase 1.B — datos en tiempo real desde el backend.</span>
+  </footer>
+</div>
+
+<script>
+  // -----------------------------------------------------------------------
+  // Mockup-compat globals (setEnv / setView / drawInto / carousel / clock)
+  // -----------------------------------------------------------------------
+  function setEnv(env) {
+    var w = document.getElementById('wrap'); w.dataset.env = env;
+    document.querySelectorAll('.env-btn').forEach(function(b) {
+      b.classList.toggle('is-active', b.dataset.env === env);
+    });
+    document.getElementById('pid').textContent = env;
+    document.getElementById('clk-env').textContent = (env === 'prod' ? 'PROD' : 'QA') + ' · ART';
+    document.getElementById('ctx-env').textContent = env.toUpperCase();
+  }
+
+  function setView(v) {
+    document.querySelectorAll('.tab').forEach(function(t) {
+      t.classList.toggle('is-active', t.dataset.view === v);
+    });
+    document.querySelectorAll('.view').forEach(function(s) {
+      s.classList.toggle('is-active', s.dataset.view === v);
+    });
+    document.getElementById('ns').innerHTML = v === 'app'
+      ? 'namespaces: <b>enterprise-ai · langfuse</b>'
+      : 'namespaces: <b>enterprise-ai · langfuse · airflow</b>';
+  }
+
+  function toggleAgent() { document.getElementById('layout').classList.toggle('agent-collapsed'); }
+  function askAgent() {
+    document.getElementById('layout').classList.remove('agent-collapsed');
+    var c = document.querySelector('.agent .conv'); if (c) c.scrollTop = 0;
+  }
+
+  function drawInto(svg) {
+    var poly = svg.querySelector('.cline'), area = svg.querySelector('.carea');
+    var vals = (svg.dataset.vals || '').split(',').map(Number).filter(function(n) { return !isNaN(n) && n !== 0; });
+    if (!vals.length) return;
+    var max = Number(svg.dataset.max) || Math.max.apply(null, vals);
+    if (!max) return;
+    var x0 = 4, x1 = 636, y0 = 20, y1 = 130, n = vals.length;
+    if (n === 1) { vals = [vals[0], vals[0]]; n = 2; }
+    var pts = vals.map(function(v, i) {
+      return [x0 + (x1 - x0) * i / (n - 1), y1 - (y1 - y0) * (v / max)];
+    });
+    var line = pts.map(function(p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+    var d = 'M' + x0 + ',' + y1 + ' L' + pts.map(function(p) {
+      return p[0].toFixed(1) + ' ' + p[1].toFixed(1);
+    }).join(' L') + ' L' + x1 + ',' + y1 + ' Z';
+    if (poly) poly.setAttribute('points', line);
+    if (area) area.setAttribute('d', d);
+  }
+
+  // Carousel IIFE
+  (function() {
+    var track = document.getElementById('caroTrack'); if (!track) return;
+    var slides = [].slice.call(track.querySelectorAll('.slide'));
+    var dots = [].slice.call(document.querySelectorAll('#caroDots i'));
+    var title = document.getElementById('caroTitle');
+    var i = 0, playing = true, timer = null;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    window._caroShow = function(k) {
+      i = (k + slides.length) % slides.length;
+      slides.forEach(function(s, j) { s.classList.toggle('is-active', j === i); });
+      dots.forEach(function(d, j) { d.classList.toggle('on', j === i); });
+      if (title) title.textContent = slides[i].dataset.title;
+    };
+    window._caroArm = function() {
+      if (timer) clearInterval(timer);
+      if (playing && !reduce) timer = setInterval(function() { window._caroShow(i + 1); }, 5000);
+    };
+
+    var pb = document.getElementById('caroPlay');
+    document.getElementById('caroNext').onclick = function() { window._caroShow(i + 1); window._caroArm(); };
+    document.getElementById('caroPrev').onclick = function() { window._caroShow(i - 1); window._caroArm(); };
+    dots.forEach(function(d, j) { d.onclick = function() { window._caroShow(j); window._caroArm(); }; });
+    if (pb) pb.onclick = function() {
+      playing = !playing; pb.textContent = playing ? '⏸' : '▶';
+      pb.title = playing ? 'Pausar rotación' : 'Reanudar'; window._caroArm();
+    };
+    if (reduce && pb) { playing = false; pb.textContent = '▶'; }
+    window._caroShow(0); window._caroArm();
+  })();
+
+  // Live clock (real Date, not simulated counter)
+  (function() {
+    var el = document.getElementById('clock'); if (!el) return;
+    function tick() {
+      var now = new Date();
+      el.textContent = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map(function(n) { return (n < 10 ? '0' : '') + n; }).join(':');
+    }
+    tick(); setInterval(tick, 1000);
+  })();
+</script>
+<script src="app.js" defer></script>
+</body>
+</html>
