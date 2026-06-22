@@ -1,0 +1,12 @@
+# Build context = raíz del repo (docker build -f backend/Dockerfile .)
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+backend/tests
+backend/.dockerignore
+docs
+k8s
+*.md
+.git
+.gitignore

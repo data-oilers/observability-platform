@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: obs-backend
+  namespace: observability
+  labels:
+    app: obs-backend
+spec:
+  type: ClusterIP
+  # Opcional pero recomendado: IP fija y libre del service CIDR del cluster auto,
+  # para que el extra_record `obs.hs.internal` de Headscale no cambie entre redeploys.
+  # Si se omite, k8s asigna una; leela con `kubectl -n observability get svc obs-backend`.
+  # clusterIP: __CLUSTER_IP__
+  selector:
+    app: obs-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8800
+      protocol: TCP

@@ -1,0 +1,25 @@
+# El cluster auto tiene Kyverno que crea un default-deny-ingress por namespace.
+# Esta policy habilita SOLO el ingreso necesario al backend (puerto 8800).
+#
+# Acceso VPN-only: el tráfico entra por el subnet-router de Tailscale, que corre
+# en el namespace `tailscale` (confirmado: el ns existe en el cluster). Si los pods
+# proxy del operador Tailscale corrieran en otro ns, ajustar el namespaceSelector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-obs-backend
+  namespace: observability
+spec:
+  podSelector:
+    matchLabels:
+      app: obs-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - protocol: TCP
+          port: 8800

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: obs-backend
+  namespace: observability
+  labels:
+    app: obs-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: obs-backend
+  template:
+    metadata:
+      labels:
+        app: obs-backend
+    spec:
+      serviceAccountName: obs-backend          # Workload Identity -> obs-backend@itmind-macro-auto-0
+      securityContext:                          # Kyverno: pod-level non-root
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: obs-backend
+          # Imagen publicada a mano (docker build/push) a Artifact Registry en auto-0.
+          # Ajustá el nombre del repo AR (`observability`) y el tag si hace falta.
+          image: us-east1-docker.pkg.dev/itmind-macro-auto-0/observability/obs-backend:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8800
+          env:
+            # La key se monta desde el Secret 'langfuse-obs' (ver README; optional=true
+            # para poder deployar ANTES de cargar la key — Langfuse/RAG quedan sin auth
+            # hasta que exista, el resto de la API funciona).
+            - name: LANGFUSE_OBS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-obs
+                  key: LANGFUSE_OBS_KEY
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8800
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8800
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:                      # Kyverno: container-level hardening
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

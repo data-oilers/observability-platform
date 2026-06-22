@@ -2,18 +2,21 @@ FROM python:3.12-slim AS base
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 
-COPY requirements.txt .
+# IMPORTANTE: buildear desde la RAÍZ del repo (context = ".") porque la imagen
+# incluye backend + frontend:
+#   docker build -f backend/Dockerfile -t <IMAGE> .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY obs_backend ./obs_backend
+COPY backend/obs_backend ./obs_backend
 COPY frontend ./frontend
 
-# Serve the frontend via StaticFiles when OBS_FRONTEND_DIR is set.
+# Sirve el frontend vía StaticFiles cuando OBS_FRONTEND_DIR está seteado.
 ENV OBS_FRONTEND_DIR=/app/frontend
 
 # Kyverno: non-root, sin privilegios. UID alto fijo.
-# El runAsNonRoot real lo enforza el securityContext del manifest en Fase 1.B;
-# este USER es backstop en caso de que el manifest no lo especifique.
+# El runAsNonRoot real lo enforza el securityContext del manifest (k8s/deployment.yaml);
+# este USER es backstop.
 RUN useradd -u 65532 -m nonroot
 USER 65532:65532
 
