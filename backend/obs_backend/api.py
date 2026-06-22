@@ -120,7 +120,7 @@ def create_app(
     @app.get("/v1/{env}/traces", response_model=list[Trace])
     def traces(
         env: str,
-        limit: int = Query(20, ge=1, le=200),
+        limit: int = Query(20, ge=1, le=100),  # Langfuse capa el API público en 100 (>100 -> HTTP 400)
     ) -> list[Trace]:
         _check_env(env)
         return tsource.recent_traces(env, limit=limit)

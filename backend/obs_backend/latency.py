@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 from obs_backend.models import LatencyStat, LatencySummary
 
 # Ventanas de muestreo para build_latency_summary
-_TRACE_WINDOW = 200   # trazas recientes a muestrear para p50/p95 del agente (cada traza = un turno de chat)
+# Langfuse capa el API público de traces en limit<=100 (limit=200 -> HTTP 400);
+# 100 es el máximo permitido y responde en ~6s en el Langfuse de qa.
+_TRACE_WINDOW = 100   # trazas recientes a muestrear para p50/p95 del agente (cada traza = un turno de chat)
 _LOG_WINDOW = 500     # logs recientes; ventana mayor porque el filtro de path-chat descarta la mayoría de las filas
 
 

@@ -18,4 +18,8 @@ def build_auth() -> tuple[str, str] | None:
 
 
 def default_client_factory(base_url: str, auth: tuple[str, str] | None) -> httpx.Client:
-    return httpx.Client(base_url=base_url, auth=auth)
+    # Langfuse self-hosted: /api/public/traces tarda ~5s, justo en el borde del
+    # default de httpx (5s) -> ReadTimeout intermitente. Timeout holgado y
+    # tuneable por env (LANGFUSE_TIMEOUT_SECONDS) sin rebuild.
+    timeout = float(os.environ.get("LANGFUSE_TIMEOUT_SECONDS", "15"))
+    return httpx.Client(base_url=base_url, auth=auth, timeout=timeout)

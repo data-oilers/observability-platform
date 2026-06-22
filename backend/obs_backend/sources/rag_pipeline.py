@@ -14,7 +14,9 @@ from obs_backend.models import RagNodeStat
 from obs_backend.sources._langfuse import build_auth, default_client_factory
 
 _MAX_PAGES = 5
-_PAGE_SIZE = 100
+# /api/public/observations con limit=100 sobrecarga el Langfuse de qa (tarda ~13s
+# y devuelve 503). limit=10 responde en ~3s; 25 da margen y entra holgado.
+_PAGE_SIZE = 25
 
 # Langfuse expresses observation latency in SECONDS (same as traces, see langfuse.py).
 # Prefer startTime/endTime delta; fall back to latency field * 1000.
