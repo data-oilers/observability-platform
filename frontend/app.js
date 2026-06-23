@@ -730,14 +730,18 @@ function redrawCharts() {
 // refreshAll — Promise.allSettled fan-out
 // ---------------------------------------------------------------------------
 
-function refreshAll() {
+function refreshAll(silent) {
   if (refreshing) return;
   refreshing = true;
   var myBatch = ++batchSeq;   // tag this batch with a unique id
   activeBatch = myBatch;      // this is the batch allowed to clear refreshing
 
-  // Mark panels loading
-  ['panelCharts', 'panelTraces', 'panelLogs', 'panelNodes', 'panelPods', 'panelFallas'].forEach(setPanelLoading);
+  // Mark panels loading — SOLO en cargas no-silenciosas (inicial / switch QA-PROD).
+  // En el poll de fondo (cada 12s) NO se atenúan los paneles: el dim opacity:.5 en
+  // cada ciclo era el "parpadeo" visible. El refresh de fondo actualiza en silencio.
+  if (!silent) {
+    ['panelCharts', 'panelTraces', 'panelLogs', 'panelNodes', 'panelPods', 'panelFallas'].forEach(setPanelLoading);
+  }
 
   // Reset the panel merge state so stale data from the previous cycle doesn't persist (M-4)
   fallasState = { workloadsHtml: undefined, eventsHtml: undefined, workloadsHasErrors: false, workloadsErr: false, eventsErr: false };
@@ -885,8 +889,9 @@ function refreshAll() {
 // Bootstrap
 // ---------------------------------------------------------------------------
 
-// Initial load
+// Initial load (no silencioso: muestra el loading)
 refreshAll();
 
-// Poll every 12 seconds
-setInterval(refreshAll, 12000);
+// Poll cada 12 segundos — SILENCIOSO (silent=true) para no atenuar los paneles
+// en cada ciclo (eso causaba el parpadeo). Igual actualiza el contenido.
+setInterval(function () { refreshAll(true); }, 12000);
