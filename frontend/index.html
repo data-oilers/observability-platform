@@ -17,6 +17,7 @@
     --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
     --env:#35B6C9; --env-soft:rgba(53,182,201,.13);
   }
+  [data-env="dev"]  { --env:#A78BFA; --env-soft:rgba(167,139,250,.14); }
   [data-env="prod"] { --env:#E5604A; --env-soft:rgba(229,96,75,.14); }
 
   body { margin:0; background:var(--ground); color:var(--text);
@@ -312,6 +313,7 @@
     <div class="brand"><span class="aperture"></span> obs·macro <small>· panel único</small></div>
 
     <div class="envswitch" role="tablist" aria-label="Entorno">
+      <button class="env-btn" data-env="dev" onclick="setEnv('dev')"><span class="led"></span>DEV</button>
       <button class="env-btn is-active" data-env="qa" onclick="setEnv('qa')"><span class="led"></span>QA</button>
       <button class="env-btn" data-env="prod" onclick="setEnv('prod')"><span class="led"></span>PROD</button>
     </div>
@@ -609,7 +611,7 @@
       b.classList.toggle('is-active', b.dataset.env === env);
     });
     document.getElementById('pid').textContent = env;
-    document.getElementById('clk-env').textContent = (env === 'prod' ? 'PROD' : 'QA') + ' · ART';
+    document.getElementById('clk-env').textContent = env.toUpperCase() + ' · ART';
     document.getElementById('ctx-env').textContent = env.toUpperCase();
     // Keep RAG pipeline link in sync with current env
     var ragLink = document.getElementById('ragLink');

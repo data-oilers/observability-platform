@@ -2750,7 +2750,7 @@ updateMinimap();
 // Wire dashboard back-link with current env param
 (function(){
   var env = (new URLSearchParams(window.location.search).get('env')||'qa').toLowerCase();
-  var valid = {qa:true,prod:true};
+  var valid = {dev:true,qa:true,prod:true};
   var safeEnv = valid[env] ? env : 'qa';
   var link = document.getElementById('dashLink');
   if(link) link.href = '/index.html?env=' + safeEnv;

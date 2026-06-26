@@ -1,6 +1,6 @@
 from typing import Literal, TypedDict
 
-EnvName = Literal["qa", "prod"]
+EnvName = Literal["dev", "qa", "prod"]
 
 
 class EnvConfig(TypedDict):
@@ -13,6 +13,12 @@ class EnvConfig(TypedDict):
 # Mapeo entorno -> proyecto de la app. PROD se habilita en Fase 3; el mapeo ya
 # existe para que el switch del front no necesite cambios después.
 ENVIRONMENTS: dict[EnvName, EnvConfig] = {
+    "dev": {
+        "project_id": "itmind-macro-ai-dev-0",
+        "namespaces": ["enterprise-ai", "langfuse", "airflow"],
+        "app_namespace": "enterprise-ai",
+        "langfuse_url": "http://langfuse-dev.macro.com.ar",
+    },
     "qa": {
         "project_id": "itmind-macro-ai-qa-0",
         "namespaces": ["enterprise-ai", "langfuse", "airflow"],
