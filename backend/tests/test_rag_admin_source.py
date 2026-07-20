@@ -47,3 +47,16 @@ def test_get_passes_params():
     src = RagAdminSource(client_factory=_factory(handler), token_for=lambda env: "jwt")
     src.get("dev", "/x", params={"page": 2, "page_size": 20})
     assert seen["q"] == {"page": "2", "page_size": "20"}
+
+
+def test_get_drops_none_params():
+    seen = {}
+
+    def handler(request):
+        seen["q"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": [], "error": None, "meta": {}})
+
+    src = RagAdminSource(client_factory=_factory(handler), token_for=lambda env: "jwt")
+    src.get("dev", "/x", params={"area": None, "page": 1})
+    assert seen["q"] == {"page": "1"}
+    assert "area" not in seen["q"]

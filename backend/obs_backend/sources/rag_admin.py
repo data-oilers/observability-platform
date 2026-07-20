@@ -24,9 +24,10 @@ class RagAdminSource:
     def get(self, env: str, path: str, params: dict | None = None) -> object:
         base_url = ENVIRONMENTS[env]["rag_base_url"]
         token = self._token_for(env)
+        clean = {k: v for k, v in (params or {}).items() if v is not None}
         try:
             with self._client_factory(base_url, token) as client:
-                resp = client.get(path, params=params or {})
+                resp = client.get(path, params=clean)
                 resp.raise_for_status()
                 payload = resp.json()
         except (httpx.HTTPError, ValueError):

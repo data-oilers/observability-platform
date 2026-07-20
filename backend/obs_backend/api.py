@@ -112,6 +112,12 @@ def create_app(
         if env == "prod":
             raise HTTPException(status_code=404, detail="panel admin no disponible en prod")
 
+    def _admin_get(env: str, path: str, params: dict | None = None) -> object:
+        result = adminsource.get(env, path, params=params)
+        if result is None:
+            raise HTTPException(status_code=502, detail="RAG no disponible o sin autorización")
+        return result
+
     @app.get("/healthz")
     def healthz() -> dict:
         return {"status": "ok"}
@@ -180,7 +186,7 @@ def create_app(
         sort_by: str = "usage_desc",
     ) -> object:
         _check_admin_env(env)
-        return adminsource.get(env, "/api/v1/admin/governance/documents", params={
+        return _admin_get(env, "/api/v1/admin/governance/documents", params={
             "area": area, "search": search, "page": page,
             "page_size": page_size, "sort_by": sort_by,
         })
@@ -188,30 +194,30 @@ def create_app(
     @app.get("/v1/{env}/admin/supervision/documents/{document_id}/chunks")
     def admin_supervision_chunks(env: str, document_id: int) -> object:
         _check_admin_env(env)
-        return adminsource.get(
+        return _admin_get(
             env, f"/api/v1/admin/governance/documents/{document_id}/chunks"
         )
 
     @app.get("/v1/{env}/admin/reporteria")
     def admin_reporteria(env: str, date_from: str, date_to: str) -> object:
         _check_admin_env(env)
-        return adminsource.get(env, "/api/v1/analytics/dashboard/executive",
-                               params={"date_from": date_from, "date_to": date_to})
+        return _admin_get(env, "/api/v1/analytics/dashboard/executive",
+                          params={"date_from": date_from, "date_to": date_to})
 
     @app.get("/v1/{env}/admin/modelos")
     def admin_modelos(env: str) -> object:
         _check_admin_env(env)
-        return adminsource.get(env, "/api/v1/admin/model-routing")
+        return _admin_get(env, "/api/v1/admin/model-routing")
 
     @app.get("/v1/{env}/admin/prompts")
     def admin_prompts(env: str) -> object:
         _check_admin_env(env)
-        return adminsource.get(env, "/api/v1/admin/prompts")
+        return _admin_get(env, "/api/v1/admin/prompts")
 
     @app.get("/v1/{env}/admin/identidad")
     def admin_identidad(env: str) -> object:
         _check_admin_env(env)
-        return adminsource.get(env, "/api/v1/admin/ad-group-mappings/")
+        return _admin_get(env, "/api/v1/admin/ad-group-mappings/")
 
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.
