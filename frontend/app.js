@@ -876,6 +876,8 @@ function refreshAll(silent) {
     if (originalSetEnv) originalSetEnv(env);
     currentEnv = env;
     envGen++;         // invalidate any in-flight old-env fetches
+    window.currentEnv = currentEnv;
+    if (window.onEnvChange) window.onEnvChange();
     refreshing = false; // release guard so the switch's refreshAll runs as a new batch
     // Reset chart buffers and last-known data on env change
     chartBuffers = { p95: [], p50: [], tokens: [], cpu: [] };
