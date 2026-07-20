@@ -105,4 +105,22 @@
     });
   }
   registerAdminRenderer('reporteria', renderReporteria);
+
+  function renderModelos(body, e) {
+    adminFetch('/modelos').then(function (data) {
+      var rows = (Array.isArray(data) ? data : (data && data.items) || []);
+      body.innerHTML = '<div class="panel"><h3>Model routing <span class="badge">' + rows.length + '</span></h3>' +
+        '<div class="tablewrap"><table><thead><tr><th>Nodo</th><th>Modelo</th>' +
+        '<th>Temp</th><th>Max tokens</th></tr></thead><tbody>' +
+        (rows.map(function (r) {
+          return '<tr><td class="mono">' + esc(r.node || r.node_name) + '</td><td>' +
+            esc(r.model) + '</td><td class="mono">' + esc(r.temperature) +
+            '</td><td class="mono">' + esc(r.max_tokens) + '</td></tr>';
+        }).join('') || '<tr><td colspan="4">Sin filas.</td></tr>') +
+        '</tbody></table></div></div>';
+    }).catch(function () {
+      body.innerHTML = '<div class="panel"><h3>Modelos <span class="err-chip">error</span></h3></div>';
+    });
+  }
+  registerAdminRenderer('modelos', renderModelos);
 })();

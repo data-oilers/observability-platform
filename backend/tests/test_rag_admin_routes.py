@@ -56,3 +56,9 @@ def test_reporteria_forwards_dates():
                       params={"date_from": "2026-07-01", "date_to": "2026-07-20"})
     assert fake.calls[0][1] == "/api/v1/analytics/dashboard/executive"
     assert fake.calls[0][2]["date_from"] == "2026-07-01"
+
+
+def test_modelos_route():
+    fake = FakeAdmin()
+    _client(fake).get("/v1/qa/admin/modelos")
+    assert fake.calls[0][1] == "/api/v1/admin/model-routing"

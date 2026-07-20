@@ -198,6 +198,11 @@ def create_app(
         return adminsource.get(env, "/api/v1/analytics/dashboard/executive",
                                params={"date_from": date_from, "date_to": date_to})
 
+    @app.get("/v1/{env}/admin/modelos")
+    def admin_modelos(env: str) -> object:
+        _check_admin_env(env)
+        return adminsource.get(env, "/api/v1/admin/model-routing")
+
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.
     frontend_dir = os.environ.get("OBS_FRONTEND_DIR")
