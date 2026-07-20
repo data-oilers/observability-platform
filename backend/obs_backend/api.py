@@ -10,7 +10,7 @@ from obs_backend.config import ENVIRONMENTS
 from obs_backend.health import summarize
 from obs_backend.latency import build_latency_summary
 from obs_backend.models import HealthSummary, InfraSnapshot, K8sEvent, LatencySummary, LogEvent, RagNodeStat, Trace, WorkloadHealth
-from obs_backend.sources.base import EventsSource, LogSource, MetricsSource, RagPipelineSource, TraceSource, WorkloadSource
+from obs_backend.sources.base import EventsSource, LogSource, MetricsSource, RagAdminSource, RagPipelineSource, TraceSource, WorkloadSource
 
 _SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from obs_backend.sources.events import EventsSource as _EventsSourceImpl  # noqa: F401
     from obs_backend.sources.langfuse import LangfuseSource  # noqa: F401
     from obs_backend.sources.monitoring import MonitoringSource  # noqa: F401
+    from obs_backend.sources.rag_admin import RagAdminSource as _RagAdminSourceImpl  # noqa: F401
     from obs_backend.sources.rag_pipeline import RagPipelineSource as _RagPipelineSourceImpl  # noqa: F401
     from obs_backend.sources.workload import WorkloadSource as _WorkloadSourceImpl  # noqa: F401
 
@@ -39,6 +40,7 @@ def create_app(
     workload_source: WorkloadSource | None = None,
     events_source: EventsSource | None = None,
     rag_source: RagPipelineSource | None = None,
+    rag_admin_source: RagAdminSource | None = None,
 ) -> FastAPI:
     app = FastAPI(title="obs·macro backend", version="0.1.0")
 
@@ -95,9 +97,20 @@ def create_app(
     else:
         rsource = rag_source
 
+    if rag_admin_source is None:
+        from obs_backend.sources.rag_admin import RagAdminSource as _RagAdminSourceImpl
+        adminsource: RagAdminSource = _RagAdminSourceImpl()
+    else:
+        adminsource = rag_admin_source
+
     def _check_env(env: str) -> None:
         if env not in ENVIRONMENTS:
             raise HTTPException(status_code=404, detail=f"entorno desconocido: {env}")
+
+    def _check_admin_env(env: str) -> None:
+        _check_env(env)
+        if env == "prod":
+            raise HTTPException(status_code=404, detail="panel admin no disponible en prod")
 
     @app.get("/healthz")
     def healthz() -> dict:
