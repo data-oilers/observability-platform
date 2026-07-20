@@ -14,4 +14,4 @@ def test_unknown_env_raises():
 
 
 def test_environments_listed():
-    assert set(ENVIRONMENTS) == {"qa", "prod"}
+    assert set(ENVIRONMENTS) == {"dev", "qa", "prod"}

@@ -338,6 +338,8 @@
     <button class="tab is-active" data-view="app" onclick="setView('app')"><span class="ic">◧</span> App <span class="badge">2 ns</span></button>
     <button class="tab" data-view="infra" onclick="setView('infra')"><span class="ic">▤</span> Infra <span class="badge">3 ns</span></button>
     <a id="ragLink" class="tab" href="/rag-pipeline.html?env=qa" style="text-decoration:none;" title="Diagrama del pipeline RAG con stats en vivo"><span class="ic">⬡</span> Pipeline RAG</a>
+    <button class="tab" data-view="admin" data-adminenv="dev" onclick="openAdmin('dev')"><span class="ic">⚙</span> Panel Admin DEV</button>
+    <button class="tab" data-view="admin" data-adminenv="qa" onclick="openAdmin('qa')"><span class="ic">⚙</span> Panel Admin QA</button>
     <span class="nsbreadcrumb" id="ns">namespaces: <b>enterprise-ai · langfuse</b></span>
   </nav>
 
@@ -576,6 +578,22 @@
         </div>
       </section>
 
+      <!-- ===================== PANEL ADMIN VIEW ===================== -->
+      <section class="view" data-view="admin">
+        <div class="banner">
+          <div class="big"><span class="d"></span> Panel Admin — <b id="adminEnvLabel">DEV</b></div>
+          <div class="sub">Mirror read-only del panel de admin del RAG · sólo DEV/QA</div>
+        </div>
+        <nav class="tabstrip" style="padding:0; background:transparent; border:0; gap:2px;">
+          <button class="tab is-active" data-adminsub="supervision" onclick="showAdminSub('supervision')">Supervisión</button>
+          <button class="tab" data-adminsub="reporteria" onclick="showAdminSub('reporteria')">Reportería</button>
+          <button class="tab" data-adminsub="modelos" onclick="showAdminSub('modelos')">Modelos</button>
+          <button class="tab" data-adminsub="prompts" onclick="showAdminSub('prompts')">Prompts</button>
+          <button class="tab" data-adminsub="identidad" onclick="showAdminSub('identidad')">Identidad</button>
+        </nav>
+        <div id="adminBody"><div class="panel" id="panelAdmin"><h3>Cargando…</h3></div></div>
+      </section>
+
     </div>
 
     <!-- ===================== AGENT DRAWER ===================== -->
@@ -628,6 +646,7 @@
     document.getElementById('ns').innerHTML = v === 'app'
       ? 'namespaces: <b>enterprise-ai · langfuse</b>'
       : 'namespaces: <b>enterprise-ai · langfuse · airflow</b>';
+    if (window.onViewChange) window.onViewChange(v);
   }
 
   function toggleAgent() { document.getElementById('layout').classList.toggle('agent-collapsed'); }
@@ -699,5 +718,6 @@
   })();
 </script>
 <script src="app.js" defer></script>
+<script src="admin.js" defer></script>
 </body>
 </html>

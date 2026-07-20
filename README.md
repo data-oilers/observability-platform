@@ -9,6 +9,21 @@ Plataforma de observabilidad para **macro**: panel único (app + infra + Langfus
 - `agent/` — agente de interpretación sobre Vertex/Gemini, `us-central1` (Fase 2).
 - `k8s/` — manifests / chart para ArgoCD.
 
+### Panel Admin (mirror read-only)
+
+Tab que reproduce el panel de admin del RAG (Supervisión, Reportería, Modelos,
+Prompts, Identidad) para DEV/QA, sin login. El backend proxea la API del RAG con
+un **service-JWT read-only por entorno** (`RAG_OBS_TOKEN_DEV` / `_QA`, secret
+`obs-rag-tokens`).
+
+> ⚠️ **Excepción al principio rector.** Este feature hace que obs sostenga una
+> identidad contra lo observado. NO desplegar sin: (1) ratificación del owner del
+> charter de obs; (2) service-user sembrado con roles `reporteria`+`analistas`
+> (+`gsi` si Identidad) en el DB del RAG DEV/QA; (3) secret `obs-rag-tokens`
+> provisionado en `itmind-infrastructure` (`fast/tenants/macro/observability/`).
+> Renovación del JWT: es un token firmado con la clave del cluster (patrón
+> eval-fixture); definir TTL y rotación en infra.
+
 ## Infra
 
 Las identidades, IAM, Vertex, secrets y el acceso por Tailscale viven en `itmind-infrastructure`

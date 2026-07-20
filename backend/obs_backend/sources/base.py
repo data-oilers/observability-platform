@@ -37,3 +37,10 @@ class RagPipelineSource(Protocol):
     def rag_node_stats(self, env: str, since_minutes: int = 60) -> list[RagNodeStat]:
         """Returns per-node stats from Langfuse observations, for RAG topology overlay."""
         ...
+
+
+class RagAdminSource(Protocol):
+    def get(self, env: str, path: str, params: dict | None = None) -> object:
+        """GET a RAG admin/analytics endpoint for ``env`` and return the unwrapped
+        ``data`` payload (any JSON type), or None on error/unexpected shape."""
+        ...
