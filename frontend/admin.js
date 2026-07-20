@@ -92,4 +92,17 @@
   }
 
   registerAdminRenderer('supervision', renderSupervision);
+
+  function renderReporteria(body, e) {
+    var to = new Date().toISOString().slice(0, 10);
+    var from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    adminFetch('/reporteria?date_from=' + from + '&date_to=' + to).then(function (data) {
+      body.innerHTML = '<div class="panel"><h3>Reportería ejecutiva</h3>' +
+        '<pre class="mono" style="white-space:pre-wrap;overflow:auto">' +
+        esc(JSON.stringify(data, null, 2)) + '</pre></div>';
+    }).catch(function () {
+      body.innerHTML = '<div class="panel"><h3>Reportería <span class="err-chip">error</span></h3></div>';
+    });
+  }
+  registerAdminRenderer('reporteria', renderReporteria);
 })();

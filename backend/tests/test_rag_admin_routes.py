@@ -48,3 +48,11 @@ def test_supervision_chunks_forwards_id():
     fake = FakeAdmin()
     _client(fake).get("/v1/qa/admin/supervision/documents/8801/chunks")
     assert fake.calls[0][1] == "/api/v1/admin/governance/documents/8801/chunks"
+
+
+def test_reporteria_forwards_dates():
+    fake = FakeAdmin()
+    _client(fake).get("/v1/dev/admin/reporteria",
+                      params={"date_from": "2026-07-01", "date_to": "2026-07-20"})
+    assert fake.calls[0][1] == "/api/v1/analytics/dashboard/executive"
+    assert fake.calls[0][2]["date_from"] == "2026-07-01"

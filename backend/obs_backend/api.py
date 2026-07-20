@@ -192,6 +192,12 @@ def create_app(
             env, f"/api/v1/admin/governance/documents/{document_id}/chunks"
         )
 
+    @app.get("/v1/{env}/admin/reporteria")
+    def admin_reporteria(env: str, date_from: str, date_to: str) -> object:
+        _check_admin_env(env)
+        return adminsource.get(env, "/api/v1/analytics/dashboard/executive",
+                               params={"date_from": date_from, "date_to": date_to})
+
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.
     frontend_dir = os.environ.get("OBS_FRONTEND_DIR")
