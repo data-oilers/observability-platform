@@ -170,6 +170,28 @@ def create_app(
         _check_env(env)
         return rsource.rag_node_stats(env, since_minutes=since_minutes)
 
+    @app.get("/v1/{env}/admin/supervision/documents")
+    def admin_supervision_documents(
+        env: str,
+        area: str | None = None,
+        search: str | None = None,
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=100),
+        sort_by: str = "usage_desc",
+    ) -> object:
+        _check_admin_env(env)
+        return adminsource.get(env, "/api/v1/admin/governance/documents", params={
+            "area": area, "search": search, "page": page,
+            "page_size": page_size, "sort_by": sort_by,
+        })
+
+    @app.get("/v1/{env}/admin/supervision/documents/{document_id}/chunks")
+    def admin_supervision_chunks(env: str, document_id: int) -> object:
+        _check_admin_env(env)
+        return adminsource.get(
+            env, f"/api/v1/admin/governance/documents/{document_id}/chunks"
+        )
+
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.
     frontend_dir = os.environ.get("OBS_FRONTEND_DIR")
