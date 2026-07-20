@@ -42,4 +42,54 @@
   window.onViewChange = (function (prev) {
     return function (view) { if (prev) prev(view); if (view === 'admin') render(); };
   })(window.onViewChange);
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+
+  function renderSupervision(body, e) {
+    adminFetch('/supervision/documents?page=1&page_size=50').then(function (data) {
+      var items = (data && data.items) || [];
+      var rows = items.map(function (d) {
+        return '<tr data-docid="' + esc(d.document_id) + '">' +
+          '<td>' + esc(d.document_name) + '</td>' +
+          '<td>' + esc(d.area) + ' ' + esc(d.version || '') + '</td>' +
+          '<td class="mono">' + esc(d.usage_count) + ' usos</td>' +
+          '<td class="mono">' + esc(d.unique_users) + ' users</td>' +
+          '<td class="mono"><span class="tag ok">+' + esc(d.positive_count) + '</span> ' +
+          '<span class="tag crit">−' + esc(d.negative_count) + '</span></td>' +
+          '</tr>';
+      }).join('');
+      body.innerHTML =
+        '<div class="panel"><h3>Documentos <span class="badge">' + items.length + '</span></h3>' +
+        '<div class="tablewrap"><table><thead><tr><th>Documento</th><th>Área</th>' +
+        '<th>Usos</th><th>Users</th><th>Feedback</th></tr></thead><tbody>' +
+        (rows || '<tr><td colspan="5">Sin documentos.</td></tr>') +
+        '</tbody></table></div></div>' +
+        '<div class="panel" id="panelAdminDetail"><h3>Chunks</h3>' +
+        '<p class="mono" style="color:var(--text-dim)">Elegí un documento.</p></div>';
+      body.querySelectorAll('tr[data-docid]').forEach(function (tr) {
+        tr.style.cursor = 'pointer';
+        tr.onclick = function () { renderChunks(tr.getAttribute('data-docid')); };
+      });
+    }).catch(function () {
+      body.innerHTML = '<div class="panel"><h3>Documentos <span class="err-chip">error</span></h3></div>';
+    });
+  }
+
+  function renderChunks(docId) {
+    var detail = document.getElementById('panelAdminDetail'); if (!detail) return;
+    detail.innerHTML = '<h3>Chunks</h3><p>Cargando…</p>';
+    adminFetch('/supervision/documents/' + encodeURIComponent(docId) + '/chunks').then(function (data) {
+      var chunks = (data && data.items) || (Array.isArray(data) ? data : []);
+      detail.innerHTML = '<h3>Chunks <span class="badge">' + chunks.length + '</span></h3>' +
+        '<div class="tablewrap"><table><tbody>' +
+        (chunks.map(function (c) {
+          return '<tr><td class="mono">' + esc(c.chunk_id || c.id || '') + '</td><td>' +
+            esc((c.text || c.content || '').slice(0, 160)) + '…</td></tr>';
+        }).join('') || '<tr><td>Sin chunks.</td></tr>') +
+        '</tbody></table></div>';
+    }).catch(function () { detail.innerHTML = '<h3>Chunks <span class="err-chip">error</span></h3>'; });
+  }
+
+  registerAdminRenderer('supervision', renderSupervision);
 })();
