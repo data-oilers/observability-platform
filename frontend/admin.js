@@ -123,4 +123,19 @@
     });
   }
   registerAdminRenderer('modelos', renderModelos);
+
+  function renderPrompts(body, e) {
+    adminFetch('/prompts').then(function (data) {
+      var rows = (Array.isArray(data) ? data : (data && data.items) || []);
+      body.innerHTML = '<div class="panel"><h3>Prompts <span class="badge">' + rows.length + '</span></h3>' +
+        rows.map(function (p) {
+          return '<details><summary class="mono">' + esc(p.name || p.tier || p.id) + '</summary>' +
+            '<pre class="mono" style="white-space:pre-wrap;overflow:auto">' +
+            esc(p.content || p.template || JSON.stringify(p, null, 2)) + '</pre></details>';
+        }).join('') + '</div>';
+    }).catch(function () {
+      body.innerHTML = '<div class="panel"><h3>Prompts <span class="err-chip">error</span></h3></div>';
+    });
+  }
+  registerAdminRenderer('prompts', renderPrompts);
 })();

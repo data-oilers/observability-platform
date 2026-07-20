@@ -62,3 +62,9 @@ def test_modelos_route():
     fake = FakeAdmin()
     _client(fake).get("/v1/qa/admin/modelos")
     assert fake.calls[0][1] == "/api/v1/admin/model-routing"
+
+
+def test_prompts_route():
+    fake = FakeAdmin()
+    _client(fake).get("/v1/dev/admin/prompts")
+    assert fake.calls[0][1] == "/api/v1/admin/prompts"

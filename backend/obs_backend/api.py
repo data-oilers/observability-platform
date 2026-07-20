@@ -203,6 +203,11 @@ def create_app(
         _check_admin_env(env)
         return adminsource.get(env, "/api/v1/admin/model-routing")
 
+    @app.get("/v1/{env}/admin/prompts")
+    def admin_prompts(env: str) -> object:
+        _check_admin_env(env)
+        return adminsource.get(env, "/api/v1/admin/prompts")
+
     # Serve the frontend as a static site when OBS_FRONTEND_DIR is set.
     # Mounted last so API routes always take precedence.
     frontend_dir = os.environ.get("OBS_FRONTEND_DIR")
