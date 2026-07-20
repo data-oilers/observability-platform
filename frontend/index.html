@@ -338,7 +338,8 @@
     <button class="tab is-active" data-view="app" onclick="setView('app')"><span class="ic">◧</span> App <span class="badge">2 ns</span></button>
     <button class="tab" data-view="infra" onclick="setView('infra')"><span class="ic">▤</span> Infra <span class="badge">3 ns</span></button>
     <a id="ragLink" class="tab" href="/rag-pipeline.html?env=qa" style="text-decoration:none;" title="Diagrama del pipeline RAG con stats en vivo"><span class="ic">⬡</span> Pipeline RAG</a>
-    <button class="tab" data-view="admin" onclick="setView('admin')"><span class="ic">⚙</span> Panel Admin <span class="badge">mirror</span></button>
+    <button class="tab" data-view="admin" data-adminenv="dev" onclick="openAdmin('dev')"><span class="ic">⚙</span> Panel Admin DEV</button>
+    <button class="tab" data-view="admin" data-adminenv="qa" onclick="openAdmin('qa')"><span class="ic">⚙</span> Panel Admin QA</button>
     <span class="nsbreadcrumb" id="ns">namespaces: <b>enterprise-ai · langfuse</b></span>
   </nav>
 

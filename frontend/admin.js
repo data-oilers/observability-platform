@@ -33,6 +33,17 @@
     render();
   };
 
+  // Open the admin view pinned to a specific env (DEV/QA tabs). Forces the env
+  // via the app's setEnv (which fires onEnvChange → render), shows the admin
+  // view, and highlights only the chosen env tab.
+  window.openAdmin = function (e) {
+    if (window.setEnv) window.setEnv(e);
+    if (window.setView) window.setView('admin');
+    document.querySelectorAll('[data-adminenv]').forEach(function (b) {
+      b.classList.toggle('is-active', b.getAttribute('data-adminenv') === e);
+    });
+  };
+
   // Re-render when the env switch fires (app.js sets window.currentEnv then calls this).
   window.onEnvChange = (function (prev) {
     return function () { if (prev) prev(); render(); };
