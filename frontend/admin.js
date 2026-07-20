@@ -43,8 +43,8 @@
     return function (view) { if (prev) prev(view); if (view === 'admin') render(); };
   })(window.onViewChange);
 
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   function renderSupervision(body, e) {
     adminFetch('/supervision/documents?page=1&page_size=50').then(function (data) {
