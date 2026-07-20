@@ -138,4 +138,15 @@
     });
   }
   registerAdminRenderer('prompts', renderPrompts);
+
+  function renderIdentidad(body, e) {
+    adminFetch('/identidad').then(function (data) {
+      body.innerHTML = '<div class="panel"><h3>Identidad</h3>' +
+        '<pre class="mono" style="white-space:pre-wrap;overflow:auto">' +
+        esc(JSON.stringify(data, null, 2)) + '</pre></div>';
+    }).catch(function () {
+      body.innerHTML = '<div class="panel"><h3>Identidad <span class="err-chip">error</span></h3></div>';
+    });
+  }
+  registerAdminRenderer('identidad', renderIdentidad);
 })();
