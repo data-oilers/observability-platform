@@ -42,6 +42,21 @@ spec:
                   name: langfuse-obs
                   key: LANGFUSE_OBS_KEY
                   optional: true
+            # Service tokens para el panel admin (mirror read-only) — auth contra el RAG
+            # en DEV/QA. optional=true para poder deployar ANTES de provisionar el secret
+            # en itmind-infrastructure.
+            - name: RAG_OBS_TOKEN_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: obs-rag-tokens
+                  key: dev
+                  optional: true
+            - name: RAG_OBS_TOKEN_QA
+              valueFrom:
+                secretKeyRef:
+                  name: obs-rag-tokens
+                  key: qa
+                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz
