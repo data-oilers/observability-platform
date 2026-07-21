@@ -19,4 +19,8 @@ def rag_token_for(env: str) -> str | None:
 def default_rag_client_factory(base_url: str, token: str | None) -> httpx.Client:
     timeout = float(os.environ.get("RAG_OBS_TIMEOUT_SECONDS", "15"))
     headers = {"Cookie": f"access_token={token}"} if token else {}
-    return httpx.Client(base_url=base_url, headers=headers, timeout=timeout)
+    # ponytail: verify=False — el cert del RAG lo firma la CA interna del banco
+    # (MACRO-ISSUER-CA) que no está en el trust store del contenedor, y la ruta
+    # es privada punto a punto (PSC). Upgrade: montar el bundle de la CA y pasar
+    # verify=<path> cuando alguien nos lo acerque.
+    return httpx.Client(base_url=base_url, headers=headers, timeout=timeout, verify=False)
