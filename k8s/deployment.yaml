@@ -27,7 +27,7 @@ spec:
         - name: obs-backend
           # Imagen publicada a mano (docker build/push) a Artifact Registry en auto-0.
           # Ajustá el nombre del repo AR (`observability`) y el tag si hace falta.
-          image: us-east1-docker.pkg.dev/itmind-macro-auto-0/observability/obs-backend:737b08c
+          image: us-east1-docker.pkg.dev/itmind-macro-auto-0/observability/obs-backend:41eedd0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
