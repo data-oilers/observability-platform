@@ -34,4 +34,8 @@ class RagAdminSource:
             return None
         if not isinstance(payload, dict):
             return None
-        return payload.get("data")
+        # El RAG es inconsistente: governance/analytics envuelven en {data,error,meta},
+        # pero model-routing y prompts devuelven el payload pelado.
+        if "data" in payload:
+            return payload["data"]
+        return payload

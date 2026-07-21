@@ -60,3 +60,12 @@ def test_get_drops_none_params():
     src.get("dev", "/x", params={"area": None, "page": 1})
     assert seen["q"] == {"page": "1"}
     assert "area" not in seen["q"]
+
+
+def test_get_returns_payload_when_no_envelope():
+    # model-routing y prompts del RAG responden {"items": [...]} sin envelope {data,error,meta}
+    def handler(request):
+        return httpx.Response(200, json={"items": [{"name": "p1"}]})
+
+    src = RagAdminSource(client_factory=_factory(handler), token_for=lambda env: "jwt")
+    assert src.get("dev", "/api/v1/admin/prompts") == {"items": [{"name": "p1"}]}
