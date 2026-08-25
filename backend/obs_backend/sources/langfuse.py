@@ -1,10 +1,17 @@
+import logging
 from typing import Callable
 
 import httpx
 
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.models import Trace
-from obs_backend.sources._langfuse import build_auth, default_client_factory as _default_client_factory
+from obs_backend.sources._langfuse import (
+    build_auth,
+    default_client_factory as _default_client_factory,
+    warn_unreachable,
+)
+
+_log = logging.getLogger(__name__)
 
 
 class LangfuseSource:
@@ -29,13 +36,17 @@ class LangfuseSource:
         auth = build_auth()
 
         # Cliente como context manager: cierra el pool de conexiones por llamada.
-        with self._client_factory(base_url, auth) as client:
-            resp = client.get(
-                "/api/public/traces",
-                params={"limit": limit, "orderBy": "timestamp.desc"},
-            )
-            resp.raise_for_status()
-            payload = resp.json()
+        try:
+            with self._client_factory(base_url, auth) as client:
+                resp = client.get(
+                    "/api/public/traces",
+                    params={"limit": limit, "orderBy": "timestamp.desc"},
+                )
+                resp.raise_for_status()
+                payload = resp.json()
+        except httpx.TransportError as exc:
+            warn_unreachable(_log, "langfuse", base_url, exc)
+            return []
 
         if not isinstance(payload, dict):
             return []

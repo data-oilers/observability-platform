@@ -1,4 +1,5 @@
 """Shared utilities for Langfuse-based sources."""
+import logging
 import os
 
 import httpx
@@ -23,3 +24,12 @@ def default_client_factory(base_url: str, auth: tuple[str, str] | None) -> httpx
     # tuneable por env (LANGFUSE_TIMEOUT_SECONDS) sin rebuild.
     timeout = float(os.environ.get("LANGFUSE_TIMEOUT_SECONDS", "15"))
     return httpx.Client(base_url=base_url, auth=auth, timeout=timeout)
+
+
+def warn_unreachable(logger: logging.Logger, source_name: str, base_url: str, exc: Exception) -> None:
+    """Log conciso (WARNING, sin traceback) para una fuente saliente inalcanzable.
+
+    Se usa cuando httpx no pudo ni conectar (TransportError): DNS/red/timeout. Un 5xx
+    real (HTTPStatusError) NO pasa por acá — eso es señal y sigue como ERROR.
+    """
+    logger.warning("%s inalcanzable: %s (%s)", source_name, base_url, type(exc).__name__)

@@ -280,3 +280,31 @@ def test_total_tokens_float_se_coerciona_a_int():
     item = {**FULL_TRACE_ITEM, "totalTokens": 511.9}
     src, _ = _make_source({"data": [item]})
     assert src.recent_traces("qa")[0].total_tokens == 511
+
+
+# ---------------------------------------------------------------------------
+# Errores de transporte: degradan a vacío + WARNING conciso (sin traceback)
+# ---------------------------------------------------------------------------
+
+def test_recent_traces_degrada_a_vacio_en_transport_error(caplog):
+    import logging
+    import httpx
+    from obs_backend.sources.langfuse import LangfuseSource
+
+    class _RaisingClient:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get(self, *a, **k):
+            raise httpx.ConnectError("Name or service not known")
+
+    src = LangfuseSource(client_factory=lambda base_url, auth: _RaisingClient())
+    with caplog.at_level(logging.WARNING):
+        result = src.recent_traces("dev")
+
+    assert result == []
+    assert any(
+        r.levelno == logging.WARNING and "inalcanzable" in r.getMessage().lower()
+        for r in caplog.records
+    ), "debe logear un WARNING conciso"
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records), "nada en ERROR"
+    assert not any(r.exc_info for r in caplog.records), "sin traceback"
