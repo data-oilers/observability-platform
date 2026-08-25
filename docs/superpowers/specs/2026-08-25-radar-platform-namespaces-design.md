@@ -89,11 +89,13 @@ su namespace.
 
 ## Fuera de alcance / follow-ups (specs aparte)
 
-- **B-2** — sumar el namespace `ecm` (ECM containerizado, stage 9-deploy-ecm) al radar.
-- **B-3** — source nueva de ArgoCD/GitOps (sync/health por app); es lo que mostraría un
-  `OutOfSync` directamente. `argocd` vive en el cluster `auto`, no en los de app → no entra como
-  namespace acá, va como source con su propio proyecto.
-- **B-4** — habilitar PROD en el panel (hoy mapeado pero "Fase 3").
+> **Verificado el 2026-08-25:** B-2/B-3/B-4 **no** son, como B-1, "ampliar un filtro con datos que
+> ya se traen" — las tres están gateadas por infra/IAM. Detalle, prerrequisitos y decisiones en
+> [`2026-08-25-radar-roadmap-b2-b3-b4-findings.md`](./2026-08-25-radar-roadmap-b2-b3-b4-findings.md).
+
+- **B-2** — namespace `ecm`: ECM corre en **proyecto+cluster aparte** y aún no está desplegado → diferida.
+- **B-3** — source de ArgoCD/GitOps: GMP **no** scrapea ArgoCD → necesita scrape antes del código.
+- **B-4** — habilitar PROD: front+back ya lo soportan; falta el grant IAM read-only sobre el proyecto PROD.
 - **C** — reducir el ruido en la fuente (exclusion filters en el sink `_Default` +
   alinear alert policies a contenido/métrica). Vive en `itmind-infrastructure`, no en este repo.
 
