@@ -11,7 +11,7 @@ from typing import Callable
 
 from google.cloud import monitoring_v3
 
-from obs_backend.config import ENVIRONMENTS, project_for
+from obs_backend.config import project_for, watched_namespaces
 from obs_backend.models import PodIssue, PvcIssue, ReplicaShortfall, WorkloadHealth
 from obs_backend.sources._gmp import build_request, get_label, latest_value
 
@@ -79,7 +79,7 @@ class WorkloadSource:
 
     def health(self, env: str) -> WorkloadHealth:
         project = project_for(env)
-        allowed_ns: set[str] = set(ENVIRONMENTS[env]["namespaces"])
+        allowed_ns: set[str] = watched_namespaces(env)  # app (por entorno) + plataforma (fijo)
         client = self._client_factory()
         ALIGN = monitoring_v3.Aggregation.Aligner
 
