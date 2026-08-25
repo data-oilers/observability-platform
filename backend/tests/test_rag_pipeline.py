@@ -1,4 +1,7 @@
 """Tests para RagPipelineSource — sin red real (cliente HTTP fake)."""
+import logging
+
+import httpx
 import pytest
 
 from obs_backend.sources.rag_pipeline import RagPipelineSource
@@ -9,20 +12,27 @@ from obs_backend.sources.rag_pipeline import RagPipelineSource
 # ---------------------------------------------------------------------------
 
 class _FakeResponse:
-    def __init__(self, body: dict):
+    def __init__(self, body: dict, raise_exc: Exception | None = None):
         self._body = body
+        self._raise_exc = raise_exc
 
     def raise_for_status(self):
-        pass
+        if self._raise_exc is not None:
+            raise self._raise_exc
 
     def json(self) -> dict:
         return self._body
 
 
 class _FakeObsClient:
-    """Supports paginated responses: list of response bodies per page."""
+    """Supports paginated responses: list of response bodies per page.
 
-    def __init__(self, pages: list[dict]):
+    An entry may also be an Exception instance, in which case get() raises it
+    for that page instead of returning a response (used to simulate a
+    transport error mid-pagination).
+    """
+
+    def __init__(self, pages: list[dict | Exception]):
         self._pages = pages  # index 0 = page 1, index 1 = page 2, etc.
         self.requests: list[dict] = []  # captures each (url, params) call
         self.init_base_url: str | None = None
@@ -38,11 +48,13 @@ class _FakeObsClient:
         self.requests.append({"url": url, "params": params or {}})
         page_num = params.get("page", 1) if params else 1
         idx = page_num - 1
-        body = self._pages[idx] if idx < len(self._pages) else {"data": []}
-        return _FakeResponse(body)
+        entry = self._pages[idx] if idx < len(self._pages) else {"data": []}
+        if isinstance(entry, Exception):
+            raise entry
+        return _FakeResponse(entry)
 
 
-def _make_source(pages: list[dict]) -> tuple[RagPipelineSource, _FakeObsClient]:
+def _make_source(pages: list[dict | Exception]) -> tuple[RagPipelineSource, _FakeObsClient]:
     fake = _FakeObsClient(pages)
 
     def factory(base_url: str, auth):
@@ -317,3 +329,65 @@ def test_two_names_aggregated_separately():
     by_name = {r.node: r for r in result}
     assert by_name["alpha"].calls == 2
     assert by_name["beta"].calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Errores de transporte — degradan a resultado parcial (no propagan)
+# ---------------------------------------------------------------------------
+
+def test_rag_node_stats_degrada_a_vacio_en_transport_error(caplog):
+    class _RaisingClient:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get(self, *a, **k):
+            raise httpx.ConnectTimeout("timed out")
+
+    src = RagPipelineSource(client_factory=lambda base_url, auth: _RaisingClient())
+    with caplog.at_level(logging.WARNING):
+        result = src.rag_node_stats("dev")
+
+    assert result == []
+    assert any(
+        r.levelno == logging.WARNING and "inalcanzable" in r.getMessage().lower()
+        for r in caplog.records
+    )
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+    assert not any(r.exc_info for r in caplog.records)
+
+
+def test_rag_node_stats_5xx_propaga():
+    """Un HTTPStatusError real (p.ej. 500) NO es un TransportError: debe propagar,
+    no degradar a resultado parcial. warn_unreachable() sólo atrapa fallas de transporte."""
+    req = httpx.Request("GET", "http://x/api/public/observations")
+    err = httpx.HTTPStatusError("500", request=req, response=httpx.Response(500, request=req))
+
+    class _RaisingStatusClient:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get(self, *a, **k):
+            return _FakeResponse({}, raise_exc=err)
+
+    src = RagPipelineSource(client_factory=lambda base_url, auth: _RaisingStatusClient())
+    with pytest.raises(httpx.HTTPStatusError):
+        src.rag_node_stats("dev")
+
+
+def test_rag_node_stats_partial_en_transport_error_mid_pagina(caplog):
+    """Página 1 devuelve datos reales; página 2 falla por transporte a mitad de
+    paginación. El agregado parcial de la página 1 debe devolverse (no []), y
+    debe quedar un WARNING "inalcanzable" — prueba que el degrade parcial es
+    real (usa datos efectivamente acumulados), no un [] accidental."""
+    page1 = {"data": [_obs("retriever"), _obs("retriever")]}
+    page2_exc = httpx.ConnectError("connection refused")
+    src, fake = _make_source([page1, page2_exc])
+
+    with caplog.at_level(logging.WARNING):
+        result = src.rag_node_stats("qa")
+
+    assert len(result) == 1
+    assert result[0].node == "retriever"
+    assert result[0].calls == 2  # sólo lo acumulado en página 1
+    assert any(
+        r.levelno == logging.WARNING and "inalcanzable" in r.getMessage().lower()
+        for r in caplog.records
+    )
