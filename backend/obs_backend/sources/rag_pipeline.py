@@ -11,7 +11,7 @@ import httpx
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.latency import percentile
 from obs_backend.models import RagNodeStat
-from obs_backend.sources._langfuse import build_auth, default_client_factory
+from obs_backend.sources._langfuse import build_auth, default_client_factory, warn_unreachable
 
 _MAX_PAGES = 5
 # /api/public/observations con limit=100 sobrecarga el Langfuse de qa (tarda ~13s
@@ -31,7 +31,7 @@ class RagPipelineSource:
     """Conector read-only a Langfuse observations para topología RAG.
 
     Defensivo: errores de parseo por observación se descartan (degrade row,
-    not batch). Errores de transporte HTTP se propagan.
+    not batch). Errores de transporte HTTP → WARNING + resultado parcial (no propagan).
     """
 
     def __init__(
@@ -52,40 +52,44 @@ class RagPipelineSource:
         # groups: name -> list of (latency_ms | None, is_error, tokens | None)
         groups: dict[str, list[tuple[float | None, bool, int | None]]] = defaultdict(list)
 
-        with self._client_factory(base_url, auth) as client:
-            for page_num in range(1, _MAX_PAGES + 1):
-                resp = client.get(
-                    "/api/public/observations",
-                    params={
-                        "fromStartTime": cutoff_iso,
-                        "limit": _PAGE_SIZE,
-                        "page": page_num,
-                    },
-                )
-                resp.raise_for_status()
-                payload = resp.json()
-
-                if not isinstance(payload, dict):
-                    break
-                data = payload.get("data")
-                if not isinstance(data, list) or len(data) == 0:
-                    break
-
-                if page_num == _MAX_PAGES and len(data) == _PAGE_SIZE:
-                    _log.warning(
-                        "rag_node_stats: pagination cap (%d obs) hit for env=%s; stats may be truncated",
-                        _MAX_PAGES * _PAGE_SIZE,
-                        env,
+        try:
+            with self._client_factory(base_url, auth) as client:
+                for page_num in range(1, _MAX_PAGES + 1):
+                    resp = client.get(
+                        "/api/public/observations",
+                        params={
+                            "fromStartTime": cutoff_iso,
+                            "limit": _PAGE_SIZE,
+                            "page": page_num,
+                        },
                     )
+                    resp.raise_for_status()
+                    payload = resp.json()
 
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    try:
-                        _parse_obs(item, groups)
-                    except Exception:
-                        # Degrade per-observation, not per-batch
-                        continue
+                    if not isinstance(payload, dict):
+                        break
+                    data = payload.get("data")
+                    if not isinstance(data, list) or len(data) == 0:
+                        break
+
+                    if page_num == _MAX_PAGES and len(data) == _PAGE_SIZE:
+                        _log.warning(
+                            "rag_node_stats: pagination cap (%d obs) hit for env=%s; stats may be truncated",
+                            _MAX_PAGES * _PAGE_SIZE,
+                            env,
+                        )
+
+                    for item in data:
+                        if not isinstance(item, dict):
+                            continue
+                        try:
+                            _parse_obs(item, groups)
+                        except Exception:
+                            # Degrade per-observation, not per-batch
+                            continue
+        except httpx.TransportError as exc:
+            warn_unreachable(_log, "rag/langfuse-observations", base_url, exc)
+            return _aggregate(groups)
 
         return _aggregate(groups)
 

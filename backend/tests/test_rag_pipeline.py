@@ -317,3 +317,31 @@ def test_two_names_aggregated_separately():
     by_name = {r.node: r for r in result}
     assert by_name["alpha"].calls == 2
     assert by_name["beta"].calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Errores de transporte — degradan a resultado parcial (no propagan)
+# ---------------------------------------------------------------------------
+
+def test_rag_node_stats_degrada_a_vacio_en_transport_error(caplog):
+    import logging
+    import httpx
+    from obs_backend.sources.rag_pipeline import RagPipelineSource
+
+    class _RaisingClient:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get(self, *a, **k):
+            raise httpx.ConnectTimeout("timed out")
+
+    src = RagPipelineSource(client_factory=lambda base_url, auth: _RaisingClient())
+    with caplog.at_level(logging.WARNING):
+        result = src.rag_node_stats("dev")
+
+    assert result == []
+    assert any(
+        r.levelno == logging.WARNING and "inalcanzable" in r.getMessage().lower()
+        for r in caplog.records
+    )
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+    assert not any(r.exc_info for r in caplog.records)
