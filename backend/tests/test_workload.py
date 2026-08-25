@@ -303,13 +303,53 @@ def test_severity_dedup_imagepull_beats_pending():
 # Namespace scoping
 # ---------------------------------------------------------------------------
 
-def test_pod_in_kube_system_ignored():
-    """kube-system namespace is outside ENVIRONMENTS[qa]['namespaces'] — must be ignored."""
+def test_pod_in_kube_system_now_watched():
+    """kube-system es namespace de plataforma (set fijo) → un CrashLoop ahí SÍ se reporta.
+
+    Antes estaba fuera de scope; se sumó al radar (B-1) porque su caída (kube-dns,
+    metrics-server, konnectivity) es la caída del cluster.
+    """
     m = _empty_series_map()
     m[WAITING_REASON] = [
         _kube_series(
             {"namespace": "kube-system", "pod": "coredns-abc", "container": "coredns",
              "reason": "CrashLoopBackOff"},
+            double_value=1.0,
+        )
+    ]
+    src = _make_source(m)
+    result = src.health("qa")
+    assert any(i.pod == "coredns-abc" and i.namespace == "kube-system"
+               for i in result.pod_issues)
+
+
+def test_external_secrets_pending_produces_issue():
+    """Escenario del incidente 2026-08-25: external-secrets Pending debe verse en el panel.
+
+    external-secrets es namespace de plataforma. Su webhook Pending (0 endpoints) es lo
+    que rompió langfuse-prod y el panel no mostraba por estar fuera del radar.
+    """
+    m = _empty_series_map()
+    m[POD_PHASE] = [
+        _kube_series(
+            {"namespace": "external-secrets", "pod": "external-secrets-webhook-abc",
+             "phase": "Pending"},
+            double_value=1.0,
+        )
+    ]
+    src = _make_source(m)
+    result = src.health("prod")
+    assert any(i.namespace == "external-secrets" and i.problem == "Pending"
+               for i in result.pod_issues)
+
+
+def test_pod_in_gke_managed_system_ignored():
+    """gke-managed-* es GKE-owned, excluido a propósito del radar (guardarraíl de scope)."""
+    m = _empty_series_map()
+    m[POD_PHASE] = [
+        _kube_series(
+            {"namespace": "gke-managed-system", "pod": "some-managed-pod",
+             "phase": "Pending"},
             double_value=1.0,
         )
     ]

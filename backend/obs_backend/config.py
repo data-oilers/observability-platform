@@ -43,5 +43,22 @@ ENVIRONMENTS: dict[EnvName, EnvConfig] = {
 AUTO_PROJECT: str = "itmind-macro-auto-0"
 
 
+# Namespaces de plataforma (infra compartida) observados en TODOS los entornos, además de los
+# de app. Set fijo: external-secrets (su webhook caído rompe cualquier apply con ExternalSecret,
+# incidente 2026-08-25), kyverno (admission controller / postura de seguridad), kube-system
+# (kube-dns, metrics-server, konnectivity — si caen, cae el cluster). Se excluyen a propósito los
+# gke-managed-*/gmp-*: son GKE-owned, baja accionabilidad, meterían ruido.
+PLATFORM_NAMESPACES: frozenset[str] = frozenset({
+    "external-secrets",
+    "kyverno",
+    "kube-system",
+})
+
+
 def project_for(env: EnvName) -> str:
     return ENVIRONMENTS[env]["project_id"]  # KeyError si env desconocido
+
+
+def watched_namespaces(env: EnvName) -> set[str]:
+    """Namespaces que observa el radar de workload: app (por entorno) + plataforma (fijo)."""
+    return set(ENVIRONMENTS[env]["namespaces"]) | PLATFORM_NAMESPACES  # KeyError si env desconocido
