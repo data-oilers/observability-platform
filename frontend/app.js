@@ -727,6 +727,53 @@ function redrawCharts() {
 }
 
 // ---------------------------------------------------------------------------
+// Render: ArgoCD (GitOps) — sync/health por app del entorno
+// ---------------------------------------------------------------------------
+
+function renderArgocd(apps) {
+  apps = apps || [];
+  var body = el('argocdBody');
+  var hint = el('argocd-hint');
+  if (!body) return;
+
+  // El backend ya ordena: problemas primero. Una app está OK sólo si Synced + Healthy.
+  var problems = apps.filter(function(a) {
+    return !(a.sync_status === 'Synced' && a.health_status === 'Healthy');
+  });
+
+  if (hint) {
+    hint.textContent = !apps.length ? '—'
+      : problems.length ? problems.length + '/' + apps.length + ' con problema'
+      : apps.length + ' ok';
+    hint.style.color = problems.length ? 'var(--warn)' : '';
+  }
+
+  if (!apps.length) {
+    body.innerHTML = '<div class="argocd-empty">Sin apps de ArgoCD para este entorno.</div>';
+    return;
+  }
+
+  var html = '<div class="fallas-section">';
+  apps.forEach(function(a) {
+    var sync = a.sync_status || '?';
+    var health = a.health_status || 'Unknown';
+    var syncCls = sync === 'Synced' ? 'ok' : 'warn';   // OutOfSync/Unknown → warn
+    // Degraded/Missing/Unknown = crítico; Progressing/Suspended = warn; Healthy = ok
+    var healthCls = health === 'Healthy' ? 'ok'
+      : (health === 'Degraded' || health === 'Missing' || health === 'Unknown') ? 'crit'
+      : 'warn';
+    html += '<div class="fallas-row">'
+      + '<span class="frow-id">' + esc(a.name) + '</span>'
+      + '<span class="frow-spacer"></span>'
+      + '<span class="fbadge ' + syncCls + '">' + esc(sync) + '</span>'
+      + '<span class="fbadge ' + healthCls + '">' + esc(health) + '</span>'
+      + '</div>';
+  });
+  html += '</div>';
+  body.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
 // refreshAll — Promise.allSettled fan-out
 // ---------------------------------------------------------------------------
 
@@ -740,7 +787,7 @@ function refreshAll(silent) {
   // En el poll de fondo (cada 12s) NO se atenúan los paneles: el dim opacity:.5 en
   // cada ciclo era el "parpadeo" visible. El refresh de fondo actualiza en silencio.
   if (!silent) {
-    ['panelCharts', 'panelTraces', 'panelLogs', 'panelNodes', 'panelPods', 'panelFallas'].forEach(setPanelLoading);
+    ['panelCharts', 'panelTraces', 'panelLogs', 'panelNodes', 'panelPods', 'panelFallas', 'panelArgocd'].forEach(setPanelLoading);
   }
 
   // Reset the panel merge state so stale data from the previous cycle doesn't persist (M-4)
@@ -753,13 +800,14 @@ function refreshAll(silent) {
     apiFetch('/infra'),
     apiFetch('/latency'),
     apiFetch('/workloads'),
-    apiFetch('/events?limit=50')
+    apiFetch('/events?limit=50'),
+    apiFetch('/argocd')
   ];
 
   Promise.allSettled(p).then(function(results) {
     var healthR = results[0], logsR = results[1], tracesR = results[2],
         infraR = results[3], latencyR = results[4],
-        workloadsR = results[5], eventsR = results[6];
+        workloadsR = results[5], eventsR = results[6], argocdR = results[7];
 
     // Health + KPIs
     if (healthR.status === 'fulfilled') {
@@ -849,6 +897,17 @@ function refreshAll(silent) {
       if (fallasState.eventsHtml === undefined) { fallasState.eventsHtml = ''; }
       _renderFallasPanel();
       console.warn('[obs] /events failed:', eventsR.reason);
+    }
+
+    // ArgoCD (GitOps) — sync/health por app del entorno
+    if (argocdR.status === 'fulfilled') {
+      renderArgocd(argocdR.value);
+      markPanelOk('panelArgocd');
+    } else if (argocdR.reason && argocdR.reason.message === 'stale-env') {
+      // stale-env: skip
+    } else {
+      markPanelError('panelArgocd', 'error');
+      console.warn('[obs] /argocd failed:', argocdR.reason);
     }
 
     // After all data is in, redraw charts
