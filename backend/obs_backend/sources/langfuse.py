@@ -19,6 +19,8 @@ class LangfuseSource:
 
     Defensivo ante el sistema observado: cualquier shape inesperado en la
     respuesta degrada a vacío / campo None en vez de propagar una excepción.
+    Errores de transporte HTTP → WARNING + resultado vacío (no propagan); un
+    5xx real sí propaga.
     """
 
     def __init__(

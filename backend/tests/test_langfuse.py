@@ -1,8 +1,10 @@
 """Tests para LangfuseSource — sin red real (cliente HTTP fake)."""
+import logging
 import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 
 from obs_backend.sources.langfuse import LangfuseSource
@@ -13,11 +15,13 @@ from obs_backend.sources.langfuse import LangfuseSource
 # ---------------------------------------------------------------------------
 
 class _FakeResponse:
-    def __init__(self, body: dict):
+    def __init__(self, body: dict, raise_exc: Exception | None = None):
         self._body = body
+        self._raise_exc = raise_exc
 
     def raise_for_status(self):
-        pass  # nunca falla en tests
+        if self._raise_exc is not None:
+            raise self._raise_exc
 
     def json(self) -> dict:
         return self._body
@@ -287,10 +291,6 @@ def test_total_tokens_float_se_coerciona_a_int():
 # ---------------------------------------------------------------------------
 
 def test_recent_traces_degrada_a_vacio_en_transport_error(caplog):
-    import logging
-    import httpx
-    from obs_backend.sources.langfuse import LangfuseSource
-
     class _RaisingClient:
         def __enter__(self): return self
         def __exit__(self, *exc): return False
@@ -308,3 +308,20 @@ def test_recent_traces_degrada_a_vacio_en_transport_error(caplog):
     ), "debe logear un WARNING conciso"
     assert not any(r.levelno >= logging.ERROR for r in caplog.records), "nada en ERROR"
     assert not any(r.exc_info for r in caplog.records), "sin traceback"
+
+
+def test_recent_traces_5xx_propaga():
+    """Un HTTPStatusError real (p.ej. 500) NO es un TransportError: debe propagar,
+    no degradar a vacío. warn_unreachable() sólo atrapa fallas de transporte."""
+    req = httpx.Request("GET", "http://x/api/public/traces")
+    err = httpx.HTTPStatusError("500", request=req, response=httpx.Response(500, request=req))
+
+    class _RaisingStatusClient:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get(self, *a, **k):
+            return _FakeResponse({}, raise_exc=err)
+
+    src = LangfuseSource(client_factory=lambda base_url, auth: _RaisingStatusClient())
+    with pytest.raises(httpx.HTTPStatusError):
+        src.recent_traces("dev")
