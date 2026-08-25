@@ -9,8 +9,8 @@ from fastapi import FastAPI, HTTPException, Query
 from obs_backend.config import ENVIRONMENTS
 from obs_backend.health import summarize
 from obs_backend.latency import build_latency_summary
-from obs_backend.models import HealthSummary, InfraSnapshot, K8sEvent, LatencySummary, LogEvent, RagNodeStat, Trace, WorkloadHealth
-from obs_backend.sources.base import EventsSource, LogSource, MetricsSource, RagAdminSource, RagPipelineSource, TraceSource, WorkloadSource
+from obs_backend.models import ArgoApp, HealthSummary, InfraSnapshot, K8sEvent, LatencySummary, LogEvent, RagNodeStat, Trace, WorkloadHealth
+from obs_backend.sources.base import ArgocdSource, EventsSource, LogSource, MetricsSource, RagAdminSource, RagPipelineSource, TraceSource, WorkloadSource
 
 _SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -41,6 +41,7 @@ def create_app(
     events_source: EventsSource | None = None,
     rag_source: RagPipelineSource | None = None,
     rag_admin_source: RagAdminSource | None = None,
+    argocd_source: ArgocdSource | None = None,
 ) -> FastAPI:
     app = FastAPI(title="obs·macro backend", version="0.1.0")
 
@@ -103,6 +104,13 @@ def create_app(
     else:
         adminsource = rag_admin_source
 
+    if argocd_source is None:
+        # Import lazy: evita arrastrar google-cloud-monitoring cuando se pasa una fuente explícita.
+        from obs_backend.sources.argocd import ArgocdSource as _ArgocdSourceImpl
+        argocdsource: ArgocdSource = _ArgocdSourceImpl()
+    else:
+        argocdsource = argocd_source
+
     def _check_env(env: str) -> None:
         if env not in ENVIRONMENTS:
             raise HTTPException(status_code=404, detail=f"entorno desconocido: {env}")
@@ -158,6 +166,11 @@ def create_app(
     def workloads(env: str) -> WorkloadHealth:
         _check_env(env)
         return wsource.health(env)
+
+    @app.get("/v1/{env}/argocd", response_model=list[ArgoApp])
+    def argocd(env: str) -> list[ArgoApp]:
+        _check_env(env)
+        return argocdsource.apps(env)
 
     @app.get("/v1/{env}/events", response_model=list[K8sEvent])
     def events(

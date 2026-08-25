@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from obs_backend.models import InfraSnapshot, K8sEvent, LogEvent, RagNodeStat, Trace, WorkloadHealth
+from obs_backend.models import ArgoApp, InfraSnapshot, K8sEvent, LogEvent, RagNodeStat, Trace, WorkloadHealth
 
 
 class LogSource(Protocol):
@@ -43,4 +43,10 @@ class RagAdminSource(Protocol):
     def get(self, env: str, path: str, params: dict | None = None) -> object:
         """GET a RAG admin/analytics endpoint for ``env`` and return the unwrapped
         ``data`` payload (any JSON type), or None on error/unexpected shape."""
+        ...
+
+
+class ArgocdSource(Protocol):
+    def apps(self, env: str) -> list[ArgoApp]:
+        """Estado GitOps (sync/health) de las apps de ArgoCD del entorno (sufijo -{env})."""
         ...

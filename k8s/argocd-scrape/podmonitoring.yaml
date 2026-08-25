@@ -1,0 +1,28 @@
+# Scrape de ArgoCD (application-controller) → GMP de itmind-macro-auto-0, para que el panel
+# lea `argocd_app_info` (sync/health por app) vía ArgocdSource. Habilita B-3 del roadmap del radar.
+#
+# DÓNDE se aplica: cluster `auto` (macro-auto-gke), namespace `argocd` — NO es un manifiesto de
+# deploy del panel (el panel corre en el ns `observability`). Comando:
+#   kubectl --context connectgateway_itmind-macro-auto-0_global_macro-auto-gke \
+#           apply -f k8s/argocd-scrape/podmonitoring.yaml
+#
+# POR QUÉ apunta al pod y no a un Service: los Services de métricas de ArgoCD están deshabilitados
+# en este install (chart argo-cd 9.6.0). El application-controller igual expone el puerto `metrics`
+# (containerPort 8082) → PodMonitoring de GMP scrapea el pod directo, sin Service.
+#
+# IaC follow-up: el hogar correcto es el stage `automation` (donde vive ArgoCD). Ese stage tiene
+# drift activo (aplicar con -target hasta reconciliar), por eso el manifiesto vive acá como fuente
+# de verdad mientras tanto. Migrar cuando el drift del stage `auto` esté reconciliado.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: argocd-application-controller
+  namespace: argocd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-application-controller
+  endpoints:
+    - port: metrics       # containerPort 8082 del application-controller
+      interval: 30s
+      path: /metrics

@@ -38,5 +38,10 @@ ENVIRONMENTS: dict[EnvName, EnvConfig] = {
 }
 
 
+# Proyecto donde corre ArgoCD (cluster `auto`). ArgoCD gestiona TODAS las apps de todos los
+# entornos desde un solo cluster, así que su source lee siempre este GMP (no project_for(env)).
+AUTO_PROJECT: str = "itmind-macro-auto-0"
+
+
 def project_for(env: EnvName) -> str:
     return ENVIRONMENTS[env]["project_id"]  # KeyError si env desconocido
