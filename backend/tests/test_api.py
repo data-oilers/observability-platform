@@ -323,3 +323,38 @@ def test_rag_nodes_since_minutes_out_of_range():
     client = _rag_client()
     assert client.get("/v1/qa/rag-nodes?since_minutes=0").status_code == 422
     assert client.get("/v1/qa/rag-nodes?since_minutes=1441").status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# /v1/{env}/argocd
+# ---------------------------------------------------------------------------
+
+class _FakeArgocdSource:
+    def __init__(self, apps):
+        self._apps = apps
+
+    def apps(self, env):
+        return self._apps
+
+
+def _argocd_client(apps=None):
+    from obs_backend.models import ArgoApp  # noqa: PLC0415
+    return TestClient(create_app(
+        log_source=_FakeSource([]),
+        argocd_source=_FakeArgocdSource(apps if apps is not None else [
+            ArgoApp(name="langfuse-prod", sync_status="OutOfSync", health_status="Healthy"),
+        ]),
+    ))
+
+
+def test_argocd_returns_apps():
+    resp = _argocd_client().get("/v1/prod/argocd")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["name"] == "langfuse-prod"
+    assert body[0]["sync_status"] == "OutOfSync"
+    assert body[0]["health_status"] == "Healthy"
+
+
+def test_argocd_unknown_env_404():
+    assert _argocd_client([]).get("/v1/staging/argocd").status_code == 404

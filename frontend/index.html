@@ -292,6 +292,9 @@
   .fbadge.crit { background:var(--crit-soft); color:var(--crit); border:1px solid rgba(229,96,75,.3); }
   .fbadge.warn { background:var(--warn-soft); color:var(--warn); border:1px solid rgba(224,179,58,.3); }
   .fbadge.count { background:var(--surface-2); color:var(--text-dim); border:1px solid var(--line); }
+  .fbadge.ok { background:var(--ok-soft); color:var(--ok); border:1px solid transparent; }
+  .argocd-empty { color:var(--text-faint); font-size:12px; padding:4px 0; }
+  .fallas-row .frow-spacer { flex:1; }
   .fallas-empty { color:var(--ok); font-size:12px; text-align:center; padding:16px 0; }
   .fallas-partial { display:flex; align-items:flex-start; gap:8px; background:var(--warn-soft);
     border:1px solid rgba(224,179,58,.3); border-radius:8px; padding:9px 11px; margin-bottom:10px;
@@ -551,6 +554,14 @@
                 <tr><td colspan="5" style="color:var(--text-faint);text-align:center;padding:20px">Cargando…</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- ArgoCD · GitOps (B-3): sync/health por app del entorno -->
+        <div class="panel" id="panelArgocd">
+          <h3>ArgoCD · GitOps <span class="hint" id="argocd-hint">—</span></h3>
+          <div class="body" id="argocdBody">
+            <div class="argocd-empty">Cargando…</div>
           </div>
         </div>
 

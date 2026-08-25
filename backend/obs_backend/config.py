@@ -38,6 +38,11 @@ ENVIRONMENTS: dict[EnvName, EnvConfig] = {
 }
 
 
+# Proyecto donde corre ArgoCD (cluster `auto`). ArgoCD gestiona TODAS las apps de todos los
+# entornos desde un solo cluster, así que su source lee siempre este GMP (no project_for(env)).
+AUTO_PROJECT: str = "itmind-macro-auto-0"
+
+
 # Namespaces de plataforma (infra compartida) observados en TODOS los entornos, además de los
 # de app. Set fijo: external-secrets (su webhook caído rompe cualquier apply con ExternalSecret,
 # incidente 2026-08-25), kyverno (admission controller / postura de seguridad), kube-system

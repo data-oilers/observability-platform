@@ -113,3 +113,9 @@ class RagNodeStat(BaseModel):
     p95_ms: float | None = None
     errors: int = 0
     total_tokens: int | None = None
+
+
+class ArgoApp(BaseModel):
+    name: str
+    sync_status: str    # Synced | OutOfSync | Unknown
+    health_status: str  # Healthy | Degraded | Progressing | Missing | Suspended | Unknown
